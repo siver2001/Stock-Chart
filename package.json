@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "postinstall": "npm install --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "install:frontend": "npm install --prefix frontend",
     "start": "python run.py",
     "dev": "python run.py",
     "dev:backend": "python -m uvicorn main:app --reload --port 8000 --app-dir backend",

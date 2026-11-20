@@ -5,7 +5,7 @@ Run: uvicorn main:app --reload --port 8000
 
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+router = APIRouter()
 
 
 class BacktestRequest(BaseModel):
@@ -58,19 +60,19 @@ class BacktestRequest(BaseModel):
     take_profit_pct: float = Field(default=0.20, ge=0, le=5.0)
 
 
-@app.get("/api/health")
+@router.get("/health")
 def health():
     return {"status": "ok", "service": "vn-stock-klinechart-pro"}
 
 
-@app.get("/api/symbols")
+@router.get("/symbols")
 def get_symbols(q: str = Query(default="", description="Search ticker or company name")):
     """Returns symbol list matching SymbolInfo format of KLineChart Pro."""
     query_val = q if isinstance(q, str) else getattr(q, "default", "")
     return search_symbols(query_val)
 
 
-@app.get("/api/history")
+@router.get("/history")
 def get_history(
     symbol: str = Query(default="VNINDEX"),
     interval: str = Query(default="1D"),
@@ -103,7 +105,7 @@ def get_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/latest")
+@router.get("/latest")
 def get_latest(
     symbol: str = Query(default="VNINDEX"),
     interval: str = Query(default="1D"),
@@ -122,7 +124,7 @@ def get_latest(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/quotes")
+@router.get("/quotes")
 def get_quotes(symbols: str = Query(default="VNINDEX,VN30,FPT,HPG,VCB,SSI,MWG,TCB")):
     """
     Returns latest price, open, high, low, volume, change, and pct_change
@@ -167,7 +169,7 @@ def get_quotes(symbols: str = Query(default="VNINDEX,VN30,FPT,HPG,VCB,SSI,MWG,TC
     return results
 
 
-@app.get("/api/klines")
+@router.get("/klines")
 def get_klines(
     symbol: str = Query(default="MWG"),
     interval: str = Query(default="1D"),
@@ -188,7 +190,7 @@ def get_klines(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/backtest")
+@router.post("/backtest")
 def post_backtest(req: BacktestRequest):
     try:
         df, origin = fetch_ohlcv(
@@ -228,3 +230,13 @@ def post_backtest(req: BacktestRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Include router both with prefix "/api" and at root level
+app.include_router(router, prefix="/api")
+app.include_router(router)
+
+
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "vn-stock-klinechart-pro", "version": "1.0.0"}
