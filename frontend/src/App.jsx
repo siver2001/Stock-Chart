@@ -120,9 +120,9 @@ const getThemeStyles = (theme, chartType = 'candle_solid') => {
     },
     indicator: {
       ohlc: {
-        upColor: 'rgba(8, 153, 129, 0.7)',
-        downColor: 'rgba(242, 54, 69, 0.7)',
-        noChangeColor: 'rgba(136, 136, 136, 0.7)',
+        upColor: '#089981',
+        downColor: '#f23645',
+        noChangeColor: '#888888',
       },
       bars: [
         {
@@ -130,12 +130,12 @@ const getThemeStyles = (theme, chartType = 'candle_solid') => {
           borderStyle: 'solid',
           borderSize: 1,
           borderDashedValue: [2, 2],
-          upColor: 'rgba(8, 153, 129, 0.35)',
-          downColor: 'rgba(242, 54, 69, 0.35)',
-          noChangeColor: 'rgba(136, 136, 136, 0.35)',
-          upBorderColor: 'rgba(8, 153, 129, 0.65)',
-          downBorderColor: 'rgba(242, 54, 69, 0.65)',
-          noChangeBorderColor: 'rgba(136, 136, 136, 0.65)',
+          upColor: 'rgba(8, 153, 129, 0.75)',
+          downColor: 'rgba(242, 54, 69, 0.75)',
+          noChangeColor: 'rgba(136, 136, 136, 0.75)',
+          upBorderColor: '#089981',
+          downBorderColor: '#f23645',
+          noChangeBorderColor: '#888888',
         },
       ],
       lines: [
@@ -143,6 +143,8 @@ const getThemeStyles = (theme, chartType = 'candle_solid') => {
         { color: '#3b82f6', size: 1.5 },
         { color: '#ec4899', size: 1.5 },
         { color: '#8b5cf6', size: 1.5 },
+        { color: '#10b981', size: 1.5 },
+        { color: '#06b6d4', size: 1.5 },
       ],
     },
   }

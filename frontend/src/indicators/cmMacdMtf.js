@@ -47,6 +47,17 @@ function calcSMA(values, length) {
   return out
 }
 
+function getIndicatorData(data) {
+  if (!data) return null
+  if (data.current && data.current.indicatorData !== undefined) {
+    return data.current.indicatorData
+  }
+  if (data.indicatorData !== undefined) {
+    return data.indicatorData
+  }
+  return data
+}
+
 export const cmMacdMtfIndicator = {
   name: 'CM_MACD_MTF',
   shortName: 'CM MACD',
@@ -58,14 +69,14 @@ export const cmMacdMtfIndicator = {
       title: 'Hist: ',
       type: 'bar',
       baseValue: 0,
-      styles: ({ data }) => {
-        const cur = data?.current?.indicatorData
-        if (!cur || cur.hist == null) return { color: '#26a69a' }
+      styles: (data) => {
+        const cur = getIndicatorData(data)
+        if (!cur || cur.hist == null) return { color: '#00e676' }
         const state = cur.histState
-        if (state === 1) return { color: '#00e676' } // Bright Green (Aqua)
-        if (state === 2) return { color: '#2962ff' } // Blue (histA_IsDown)
-        if (state === 3) return { color: '#ff1744' } // Dark Red (histB_IsDown)
-        return { color: '#ff8a80' }                  // Light Red (histB_IsUp)
+        if (state === 1) return { color: '#00e676' } // Bright Green (Aqua): Rising above 0
+        if (state === 2) return { color: '#2962ff' } // Royal Blue: Falling above 0
+        if (state === 3) return { color: '#ff1744' } // Deep Red: Falling below 0
+        return { color: '#ff8a80' }                  // Pale/Light Red: Rising below 0
       },
     },
     {
@@ -78,8 +89,8 @@ export const cmMacdMtfIndicator = {
       key: 'macd',
       title: 'MACD: ',
       type: 'line',
-      styles: ({ data }) => {
-        const cur = data?.current?.indicatorData
+      styles: (data) => {
+        const cur = getIndicatorData(data)
         if (!cur || cur.macd == null || cur.signal == null) return { color: '#00c853', size: 2 }
         return {
           color: cur.macd >= cur.signal ? '#00c853' : '#d50000',
@@ -95,10 +106,11 @@ export const cmMacdMtfIndicator = {
     },
     {
       key: 'crossDot',
-      title: 'Cross: ',
+      title: '',
       type: 'circle',
-      styles: ({ data }) => {
-        const cur = data?.current?.indicatorData
+      attrs: () => ({ r: 3.5 }),
+      styles: (data) => {
+        const cur = getIndicatorData(data)
         if (!cur || cur.cross === 0) return { color: 'transparent' }
         return {
           color: cur.cross === 1 ? '#00e676' : '#ff1744',
@@ -107,6 +119,67 @@ export const cmMacdMtfIndicator = {
       },
     },
   ],
+  createTooltipDataSource: ({ kLineDataList, indicator, crosshair }) => {
+    let dataIndex = kLineDataList.length - 1
+    if (
+      crosshair &&
+      crosshair.dataIndex !== undefined &&
+      crosshair.dataIndex >= 0 &&
+      crosshair.dataIndex < kLineDataList.length
+    ) {
+      dataIndex = crosshair.dataIndex
+    }
+    const result = indicator.result || []
+    const cur = result[dataIndex]
+
+    if (!cur || cur.macd == null) {
+      return {
+        name: 'CM MACD',
+        calcParamsText: `(${indicator.calcParams.join(',')})`,
+        icons: [],
+        values: [],
+      }
+    }
+
+    const histColor =
+      cur.histState === 1
+        ? '#00e676'
+        : cur.histState === 2
+        ? '#2962ff'
+        : cur.histState === 3
+        ? '#ff1744'
+        : '#ff8a80'
+    const macdColor = cur.macd >= cur.signal ? '#00c853' : '#d50000'
+
+    return {
+      name: 'CM MACD',
+      calcParamsText: `(${indicator.calcParams.join(',')})`,
+      icons: [],
+      values: [
+        {
+          title: 'Hist: ',
+          value: {
+            text: cur.hist != null ? Number(cur.hist).toFixed(2) : '--',
+            color: histColor,
+          },
+        },
+        {
+          title: 'MACD: ',
+          value: {
+            text: cur.macd != null ? Number(cur.macd).toFixed(2) : '--',
+            color: macdColor,
+          },
+        },
+        {
+          title: 'Signal: ',
+          value: {
+            text: cur.signal != null ? Number(cur.signal).toFixed(2) : '--',
+            color: '#ffd600',
+          },
+        },
+      ],
+    }
+  },
   calc: (dataList, indicator) => {
     const [fastLen = 12, slowLen = 26, sigLen = 9] = indicator.calcParams
     const closes = dataList.map((d) => d.close)

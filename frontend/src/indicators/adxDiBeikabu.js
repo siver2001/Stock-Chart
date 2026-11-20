@@ -37,6 +37,64 @@ export const adxDiBeikabuIndicator = {
       styles: () => ({ color: '#787b86', style: 'dashed', size: 1 }),
     },
   ],
+  createTooltipDataSource: ({ kLineDataList, indicator, crosshair }) => {
+    let dataIndex = kLineDataList.length - 1
+    if (
+      crosshair &&
+      crosshair.dataIndex !== undefined &&
+      crosshair.dataIndex >= 0 &&
+      crosshair.dataIndex < kLineDataList.length
+    ) {
+      dataIndex = crosshair.dataIndex
+    }
+    const result = indicator.result || []
+    const cur = result[dataIndex]
+
+    if (!cur) {
+      return {
+        name: 'ADX & DI',
+        calcParamsText: `(${indicator.calcParams.join(',')})`,
+        icons: [],
+        values: [],
+      }
+    }
+
+    return {
+      name: 'ADX & DI',
+      calcParamsText: `(${indicator.calcParams.join(',')})`,
+      icons: [],
+      values: [
+        {
+          title: 'DI+: ',
+          value: {
+            text: cur.diPlus != null ? Number(cur.diPlus).toFixed(2) : '--',
+            color: '#00c853',
+          },
+        },
+        {
+          title: 'DI-: ',
+          value: {
+            text: cur.diMinus != null ? Number(cur.diMinus).toFixed(2) : '--',
+            color: '#ff1744',
+          },
+        },
+        {
+          title: 'ADX: ',
+          value: {
+            text: cur.adx != null ? Number(cur.adx).toFixed(2) : '--',
+            color: '#2979ff',
+          },
+        },
+        {
+          title: 'TH: ',
+          value: {
+            text: cur.th != null ? Number(cur.th).toFixed(0) : '20',
+            color: '#787b86',
+          },
+        },
+      ],
+    }
+  },
   calc: (dataList, indicator) => {
     const [len = 14, th = 20] = indicator.calcParams
     const n = dataList.length
