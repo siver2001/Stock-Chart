@@ -80,12 +80,6 @@ export const cmMacdMtfIndicator = {
       },
     },
     {
-      key: 'zero',
-      title: '',
-      type: 'line',
-      styles: () => ({ color: '#787b86', style: 'dashed', size: 1 }),
-    },
-    {
       key: 'macd',
       title: 'MACD: ',
       type: 'line',
@@ -218,7 +212,6 @@ export const cmMacdMtfIndicator = {
         histState,
         cross,
         crossDot: cross !== 0 ? signal : undefined,
-        zero: 0,
       }
     })
   },

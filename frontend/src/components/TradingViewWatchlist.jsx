@@ -190,21 +190,23 @@ export default function TradingViewWatchlist({
     setActiveColorPickerSym(null)
   }
 
-  const formatPrice = (val) => {
+  const formatPrice = (val, sym) => {
     if (val == null) return '--'
+    const isIndex = ['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'].includes(sym)
     return new Intl.NumberFormat('vi-VN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: isIndex ? 2 : 0,
+      maximumFractionDigits: isIndex ? 2 : 0,
     }).format(val)
   }
 
-  const formatNum = (n) =>
-    n != null
-      ? new Intl.NumberFormat('vi-VN', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }).format(n)
-      : '--'
+  const formatNum = (n, sym = activeSymbol) => {
+    if (n == null) return '--'
+    const isIndex = ['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'].includes(sym)
+    return new Intl.NumberFormat('vi-VN', {
+      minimumFractionDigits: isIndex ? 2 : 0,
+      maximumFractionDigits: isIndex ? 2 : 0,
+    }).format(n)
+  }
 
   const formatVol = (v) =>
     v != null ? new Intl.NumberFormat('vi-VN').format(Math.round(v)) : '--'

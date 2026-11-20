@@ -387,7 +387,8 @@ export default function App() {
     chartInstanceRef.current = chart
     window.__chart = chart
 
-    chart.setPriceVolumePrecision(2, 0)
+    const isInitIndex = ['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'].includes(activeSymbol)
+    chart.setPriceVolumePrecision(isInitIndex ? 2 : 0, 0)
     chart.setTimezone('Asia/Ho_Chi_Minh')
     chart.setStyles(getThemeStyles(theme, chartType))
 
@@ -505,7 +506,8 @@ export default function App() {
 
     setActiveSymbol(ticker)
     datafeedRef.current.unsubscribe(activeSymbol, activePeriod)
-    chartInstanceRef.current.setPriceVolumePrecision(2, 0)
+    const isNextIndex = ['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'].includes(ticker)
+    chartInstanceRef.current.setPriceVolumePrecision(isNextIndex ? 2 : 0, 0)
 
     // 2. Xóa các hình vẽ cũ trên canvas của mã cũ
     chartInstanceRef.current.removeOverlay()

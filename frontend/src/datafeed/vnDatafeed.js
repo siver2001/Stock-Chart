@@ -19,17 +19,20 @@ export class VNStockDatafeed {
 
   async searchSymbols(search = '') {
     const list = await searchSymbols(search)
-    return list.map((item) => ({
-      ticker: item.ticker,
-      name: item.name || item.ticker,
-      shortName: item.shortName || item.ticker,
-      exchange: item.exchange || 'HOSE',
-      market: item.market || 'stocks',
-      priceCurrency: item.priceCurrency || 'VND',
-      type: item.type || 'CS',
-      pricePrecision: 2,
-      volumePrecision: 0,
-    }))
+    return list.map((item) => {
+      const isIndex = ['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'].includes(item.ticker)
+      return {
+        ticker: item.ticker,
+        name: item.name || item.ticker,
+        shortName: item.shortName || item.ticker,
+        exchange: item.exchange || 'HOSE',
+        market: item.market || 'stocks',
+        priceCurrency: item.priceCurrency || 'VND',
+        type: item.type || 'CS',
+        pricePrecision: isIndex ? 2 : 0,
+        volumePrecision: 0,
+      }
+    })
   }
 
   async getHistoryKLineData(symbol, period, from, to) {

@@ -110,11 +110,12 @@ export default function RealtimeMarketBar({ activeSymbol, activePeriod, latestBa
     barDateStr = `${pad(bDate.getDate())}/${pad(bDate.getMonth() + 1)}/${bDate.getFullYear()}`
   }
 
+  const isIndex = ['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'].includes(activeSymbol)
   const formatPrice = (val) => {
     if (val == null) return '--'
     return new Intl.NumberFormat('vi-VN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: isIndex ? 2 : 0,
+      maximumFractionDigits: isIndex ? 2 : 0,
     }).format(val)
   }
 

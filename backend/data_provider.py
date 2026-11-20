@@ -248,15 +248,17 @@ def _fetch_vndirect_live(
         if df.empty:
             return None
 
-        # Format matching TradingView standard: Thousand-VND for stocks (e.g. 19.70, 45.00), points for indices
+        # Standardize VN stock prices:
+        # Stocks: Full exact VND (e.g. 19,550 VND for SSI, 44,650 VND for FPT) with all digits visible
+        # Indices: Exact index points (e.g. 1,688.79 for VNINDEX, 1,776.31 for VN30)
         is_index = symbol in ("VNINDEX", "VN30", "HNXINDEX", "UPCOMINDEX", "HNX30")
         if not is_index:
-            if df["close"].median() > 500:
+            if df["close"].median() < 500:
                 for col in ("open", "high", "low", "close"):
-                    df[col] = (df[col] / 1000.0).round(2)
+                    df[col] = (df[col] * 1000.0).round(0)
             else:
                 for col in ("open", "high", "low", "close"):
-                    df[col] = df[col].round(2)
+                    df[col] = df[col].round(0)
         else:
             for col in ("open", "high", "low", "close"):
                 df[col] = df[col].round(2)
@@ -319,13 +321,13 @@ def generate_demo_ohlcv(
     t = np.linspace(0, 6 * np.pi, n)
 
     is_index = symbol.upper() in ("VNINDEX", "VN30", "HNXINDEX", "UPCOMINDEX", "HNX30")
-    base_price = 1250.0 if is_index else (35.0 + (seed % 40) * 1.0)
+    base_price = 1250.0 if is_index else (35000.0 + (seed % 40) * 1000.0)
     drift = np.linspace(0, 0.15, n)
     cycle = 0.08 * np.sin(t) + 0.04 * np.cos(2.3 * t)
     noise = np.cumsum(rng.normal(0, 0.006, n))
     close = base_price * np.exp(drift + cycle + noise)
 
-    precision_mult = 1.0 if is_index else 0.05
+    precision_mult = 1.0 if is_index else 50.0
     close = np.round(close / precision_mult) * precision_mult
 
     open_p = np.roll(close, 1)
@@ -336,7 +338,7 @@ def generate_demo_ohlcv(
     spread_up = np.abs(rng.normal(0.005, 0.003, n)) * close
     spread_dn = np.abs(rng.normal(0.005, 0.003, n)) * close
     high = np.round((np.maximum(open_p, close) + spread_up) / precision_mult) * precision_mult
-    low = np.round(np.maximum(1.0, np.minimum(open_p, close) - spread_dn) / precision_mult) * precision_mult
+    low = np.round(np.maximum(100.0 if not is_index else 10.0, np.minimum(open_p, close) - spread_dn) / precision_mult) * precision_mult
 
     base_vol = 500_000 if is_intraday else 3_000_000
     vol_mult = 1.0 + 1.5 * np.abs(close - open_p) / np.maximum(open_p, 1.0) * 20.0
@@ -445,23 +447,33 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
                     # Giá tham chiếu là giá đóng cửa phiên hôm trước (hoặc giá mở cửa nếu chỉ có 1 thanh)
                     ref_price = c[-2] if len(c) >= 2 else last_o
 
-                    # Format matching TradingView standard: Thousand-VND for stocks (e.g. 19.70, 45.00), points for indices
+                    # Standardize VN stock prices:
+                    # Stocks: Full exact VND (e.g. 19,550 VND for SSI, 44,650 VND for FPT)
+                    # Indices: Exact index points (e.g. 1,688.79 for VNINDEX, 1,776.31 for VN30)
                     is_index = sym in ("VNINDEX", "VN30", "HNXINDEX", "UPCOMINDEX", "HNX30")
-                    if not is_index and last_c > 500:
-                        last_c = round(last_c / 1000.0, 2)
-                        last_o = round(last_o / 1000.0, 2)
-                        last_h = round(last_h / 1000.0, 2)
-                        last_l = round(last_l / 1000.0, 2)
-                        ref_price = round(ref_price / 1000.0, 2)
+                    if not is_index:
+                        if last_c < 500:
+                            last_c = round(last_c * 1000.0, 0)
+                            last_o = round(last_o * 1000.0, 0)
+                            last_h = round(last_h * 1000.0, 0)
+                            last_l = round(last_l * 1000.0, 0)
+                            ref_price = round(ref_price * 1000.0, 0)
+                        else:
+                            last_c = round(last_c, 0)
+                            last_o = round(last_o, 0)
+                            last_h = round(last_h, 0)
+                            last_l = round(last_l, 0)
+                            ref_price = round(ref_price, 0)
+                        diff = round(last_c - ref_price, 0)
+                        pct = round((diff / ref_price * 100.0), 2) if ref_price != 0 else 0.0
                     else:
                         last_c = round(last_c, 2)
                         last_o = round(last_o, 2)
                         last_h = round(last_h, 2)
                         last_l = round(last_l, 2)
                         ref_price = round(ref_price, 2)
-
-                    diff = round(last_c - ref_price, 2)
-                    pct = round((diff / ref_price * 100.0), 2) if ref_price != 0 else 0.0
+                        diff = round(last_c - ref_price, 2)
+                        pct = round((diff / ref_price * 100.0), 2) if ref_price != 0 else 0.0
 
                     q_data = {
                         "symbol": sym,
@@ -617,12 +629,12 @@ def fetch_ohlcv(
                     }).dropna(subset=["open", "high", "low", "close"])
 
                     if symbol not in ("VNINDEX", "VN30", "HNXINDEX", "UPCOMINDEX"):
-                        if out["close"].median() > 500:
+                        if out["close"].median() < 500:
                             for col in ("open", "high", "low", "close"):
-                                out[col] = (out[col] / 1000.0).round(2)
+                                out[col] = (out[col] * 1000.0).round(0)
                         else:
                             for col in ("open", "high", "low", "close"):
-                                out[col] = out[col].round(2)
+                                out[col] = out[col].round(0)
                     else:
                         for col in ("open", "high", "low", "close"):
                             out[col] = out[col].round(2)
