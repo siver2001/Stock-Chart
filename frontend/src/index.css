@@ -2166,3 +2166,389 @@ body.theme-light .tv-rt-clock-time {
   font-weight: 600;
   font-size: 10px;
 }
+
+/* ==========================================================================
+   10. TRADINGVIEW INDICATOR SETTINGS MODAL (PRO DESIGN)
+   ========================================================================== */
+.tv-settings-modal {
+  width: 500px;
+  max-width: 95vw;
+  background-color: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+body.theme-light .tv-settings-modal {
+  background-color: #ffffff;
+  border-color: #e0e3eb;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.15);
+}
+
+.tv-settings-header {
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #2a2e39;
+  background-color: #1e222d;
+}
+body.theme-light .tv-settings-header {
+  border-bottom-color: #e0e3eb;
+  background-color: #f8f9fd;
+}
+
+.tv-settings-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #f0f3fa;
+}
+body.theme-light .tv-settings-title {
+  color: #131722;
+}
+
+.tv-settings-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 16px;
+  border-bottom: 1px solid #2a2e39;
+  background-color: #181b24;
+}
+body.theme-light .tv-settings-tabs {
+  background-color: #f0f3fa;
+  border-bottom-color: #e0e3eb;
+}
+.tv-settings-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #787b86;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tv-settings-tab:hover {
+  color: #f0f3fa;
+}
+body.theme-light .tv-settings-tab:hover {
+  color: #131722;
+}
+.tv-settings-tab.active {
+  color: #2962ff;
+  border-bottom-color: #2962ff;
+}
+
+.tv-settings-body {
+  padding: 18px 20px;
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tv-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #787b86;
+  margin-bottom: 4px;
+}
+
+/* Preset Chips */
+.tv-preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.tv-preset-chip {
+  background-color: #2a2e39;
+  border: 1px solid #363a45;
+  color: #d1d4dc;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.tv-preset-chip:hover {
+  background-color: #363a45;
+  color: #ffffff;
+  border-color: #2962ff;
+  transform: translateY(-1px);
+}
+.tv-preset-chip.active {
+  background-color: rgba(41, 98, 255, 0.2);
+  border-color: #2962ff;
+  color: #58a6ff;
+}
+body.theme-light .tv-preset-chip {
+  background-color: #f0f3fa;
+  border-color: #e0e3eb;
+  color: #434651;
+}
+body.theme-light .tv-preset-chip:hover {
+  background-color: #e0e3eb;
+  color: #131722;
+}
+
+/* Setting Row */
+.tv-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background-color: #181b24;
+  border: 1px solid #2a2e39;
+  border-radius: 8px;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.tv-setting-row:hover {
+  border-color: #3a3f50;
+  background-color: #1d212c;
+}
+body.theme-light .tv-setting-row {
+  background-color: #f8f9fd;
+  border-color: #e0e3eb;
+}
+body.theme-light .tv-setting-row:hover {
+  background-color: #f0f3fa;
+}
+
+.tv-setting-label-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tv-color-indicator {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.4);
+}
+.tv-setting-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f0f3fa;
+}
+body.theme-light .tv-setting-label {
+  color: #131722;
+}
+.tv-setting-sublabel {
+  font-size: 11px;
+  color: #787b86;
+}
+
+.tv-setting-input-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tv-setting-unit {
+  font-size: 12px;
+  color: #787b86;
+  font-weight: 500;
+}
+.tv-setting-input {
+  width: 80px;
+  background-color: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  color: #f0f3fa;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  padding: 6px 8px;
+  outline: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
+  transition: all 0.15s;
+}
+.tv-setting-input:focus {
+  border-color: #2962ff;
+  box-shadow: 0 0 0 2px rgba(41, 98, 255, 0.25);
+  background-color: #161a25;
+}
+body.theme-light .tv-setting-input {
+  background-color: #ffffff;
+  border-color: #e0e3eb;
+  color: #131722;
+}
+
+.tv-delete-btn {
+  background: transparent;
+  border: none;
+  color: #787b86;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.tv-delete-btn:hover {
+  color: #f23645;
+  background-color: rgba(242, 54, 69, 0.12);
+}
+
+.tv-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  background-color: rgba(41, 98, 255, 0.08);
+  border: 1px dashed rgba(41, 98, 255, 0.45);
+  border-radius: 8px;
+  color: #2962ff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-top: 4px;
+}
+.tv-add-btn:hover {
+  background-color: rgba(41, 98, 255, 0.16);
+  border-color: #2962ff;
+  color: #58a6ff;
+}
+
+/* Sliders */
+.tv-slider-card {
+  background-color: #181b24;
+  border: 1px solid #2a2e39;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+body.theme-light .tv-slider-card {
+  background-color: #f8f9fd;
+  border-color: #e0e3eb;
+}
+.tv-slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tv-slider-badge {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2962ff;
+  background-color: rgba(41, 98, 255, 0.14);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
+}
+.tv-slider-input {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background-color: #2a2e39;
+  accent-color: #2962ff;
+  cursor: pointer;
+}
+.tv-slider-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #787b86;
+}
+
+/* Footer Buttons */
+.tv-settings-footer {
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #2a2e39;
+  background-color: #1e222d;
+}
+body.theme-light .tv-settings-footer {
+  border-top-color: #e0e3eb;
+  background-color: #f8f9fd;
+}
+.tv-btn-ghost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: #787b86;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tv-btn-ghost:hover {
+  color: #f0f3fa;
+  background-color: #2a2e39;
+}
+body.theme-light .tv-btn-ghost:hover {
+  color: #131722;
+  background-color: #e0e3eb;
+}
+.tv-btn-outline {
+  background: transparent;
+  border: 1px solid #363a45;
+  color: #d1d4dc;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tv-btn-outline:hover {
+  background-color: #2a2e39;
+  color: #ffffff;
+  border-color: #4a5060;
+}
+body.theme-light .tv-btn-outline {
+  border-color: #d1d4dc;
+  color: #434651;
+}
+body.theme-light .tv-btn-outline:hover {
+  background-color: #f0f3fa;
+  color: #131722;
+}
+.tv-btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #2962ff;
+  border: none;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(41, 98, 255, 0.4);
+  transition: all 0.15s;
+}
+.tv-btn-primary:hover {
+  background-color: #1e53e5;
+  box-shadow: 0 4px 14px rgba(41, 98, 255, 0.6);
+  transform: translateY(-1px);
+}
+.tv-btn-primary:active {
+  transform: translateY(0);
+}
+
