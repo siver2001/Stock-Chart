@@ -51,6 +51,7 @@ export default function TradingViewWatchlist({
   const [activeColorPickerSym, setActiveColorPickerSym] = useState(null)
   const [newTicker, setNewTicker] = useState('')
   const [quotes, setQuotes] = useState({})
+  const [flashes, setFlashes] = useState({})
   const [sortBy, setSortBy] = useState('default') // 'default', 'pct_desc', 'pct_asc'
   const colorPickerRef = useRef(null)
 
@@ -87,7 +88,35 @@ export default function TradingViewWatchlist({
       try {
         const data = await fetchQuotes(symbols)
         if (isMounted && data) {
-          setQuotes((prev) => ({ ...prev, ...data }))
+          setQuotes((prev) => {
+            const nextFlashes = {}
+            let hasFlash = false
+            for (const [sym, q] of Object.entries(data)) {
+              const oldQ = prev[sym]
+              if (oldQ && oldQ.close != null && q.close != null) {
+                if (q.close > oldQ.close) {
+                  nextFlashes[sym] = 'up'
+                  hasFlash = true
+                } else if (q.close < oldQ.close) {
+                  nextFlashes[sym] = 'down'
+                  hasFlash = true
+                }
+              }
+            }
+            if (hasFlash) {
+              setFlashes((f) => ({ ...f, ...nextFlashes }))
+              setTimeout(() => {
+                if (isMounted) {
+                  setFlashes((f) => {
+                    const cleaned = { ...f }
+                    Object.keys(nextFlashes).forEach((k) => delete cleaned[k])
+                    return cleaned
+                  })
+                }
+              }, 800)
+            }
+            return { ...prev, ...data }
+          })
         }
       } catch (err) {
         console.warn('Could not fetch quotes batch:', err)
@@ -95,7 +124,7 @@ export default function TradingViewWatchlist({
     }
 
     loadQuotes()
-    const interval = setInterval(loadQuotes, 3000)
+    const interval = setInterval(loadQuotes, 2000)
     return () => {
       isMounted = false
       clearInterval(interval)
@@ -207,7 +236,11 @@ export default function TradingViewWatchlist({
       <div className="tv-watchlist-header">
         <div className="tv-watchlist-title">
           <ListFilter size={15} color="#58a6ff" />
-          <span>Danh mục theo dõi (Watchlist)</span>
+          <span>Danh mục theo dõi</span>
+          <span className="tv-live-sync-badge" title="Dữ liệu giá nhảy realtime đồng bộ tất cả mã">
+            <span className="tv-live-sync-dot"></span>
+            Realtime
+          </span>
         </div>
         <button className="tv-icon-btn" onClick={onClose} title="Thu nhỏ / Đóng Watchlist">
           <X size={15} />
@@ -393,7 +426,7 @@ export default function TradingViewWatchlist({
 
                 {/* Right: Live Price + Growth % Badge + Delete */}
                 <div className="tv-watchlist-item-right">
-                  <div className="tv-wl-price-col">
+                  <div className={`tv-wl-price-col ${flashes[sym] ? `tv-flash-${flashes[sym]}` : ''}`}>
                     <span className="tv-wl-price-val">{priceStr}</span>
                     <span className={`tv-wl-pct-badge ${isUp ? 'up' : 'down'}`}>
                       {pctStr}

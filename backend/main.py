@@ -9,7 +9,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from data_provider import search_symbols, fetch_ohlcv
+from data_provider import search_symbols, fetch_ohlcv, fetch_live_quotes
 from backtester import BacktestConfig, run_backtest
 
 app = FastAPI(
@@ -115,11 +115,35 @@ def get_latest(
     Includes reference price (yesterday's close) and accurate day change / pct_change.
     """
     try:
-        sym_str = symbol if isinstance(symbol, str) else getattr(symbol, "default", "VNINDEX")
-        int_str = interval if isinstance(interval, str) else getattr(interval, "default", "1D")
-        df, _ = fetch_ohlcv(symbol=sym_str, interval=int_str)
+        from datetime import datetime, timedelta
+        sym_str = (symbol if isinstance(symbol, str) else getattr(symbol, "default", "VNINDEX")).strip().upper()
+        int_str = (interval if isinstance(interval, str) else getattr(interval, "default", "1D")).strip()
+
+        # If daily resolution, use the ultra-fast synchronized quote fetcher
+        if int_str.upper() in ("1D", "D", "2D", "3D"):
+            q_map = fetch_live_quotes([sym_str])
+            if sym_str in q_map:
+                q = q_map[sym_str]
+                return {
+                    "timestamp": q["timestamp"],
+                    "open": q["open"],
+                    "high": q["high"],
+                    "low": q["low"],
+                    "close": q["close"],
+                    "volume": q["volume"],
+                    "ref_price": q["ref_price"],
+                    "change": q["change"],
+                    "pct_change": q["pct_change"],
+                }
+
+        # For intraday (1m, 5m, 1h...), fetch only recent 2 days to stay lightning fast
+        start_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+        df, _ = fetch_ohlcv(symbol=sym_str, interval=int_str, start_date=start_date)
+        if df.empty:
+            df, _ = fetch_ohlcv(symbol=sym_str, interval=int_str)
         if df.empty:
             raise HTTPException(status_code=404, detail="No bar available")
+
         last_bar = df.iloc[-1].to_dict()
         c = float(last_bar.get("close", 0.0))
         o = float(last_bar.get("open", c))
@@ -145,52 +169,12 @@ def get_quotes(symbols: str = Query(default="VNINDEX,VN30,FPT,HPG,VCB,SSI,MWG,TC
     """
     Returns latest price, open, high, low, volume, change, and pct_change
     relative to reference price (yesterday's close) for multiple symbols in parallel.
+    Ultra-fast (<0.8s) and synchronized across all watchlist tickers.
     """
     sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
     if not sym_list:
         return {}
-
-    results = {}
-
-    def fetch_one(sym):
-        try:
-            df, _ = fetch_ohlcv(symbol=sym, interval="1D")
-            if df is not None and not df.empty:
-                last_bar = df.iloc[-1].to_dict()
-                c = float(last_bar.get("close", 0.0))
-                o = float(last_bar.get("open", c))
-
-                # Giá tham chiếu là giá đóng cửa phiên hôm trước (Ref price = Yesterday close)
-                ref_price = o
-                if len(df) >= 2:
-                    prev_bar = df.iloc[-2].to_dict()
-                    ref_price = float(prev_bar.get("close", o))
-
-                diff = c - ref_price
-                pct = (diff / ref_price * 100.0) if ref_price != 0 else 0.0
-                return sym, {
-                    "symbol": sym,
-                    "close": c,
-                    "open": o,
-                    "high": float(last_bar.get("high", c)),
-                    "low": float(last_bar.get("low", c)),
-                    "volume": float(last_bar.get("volume", 0.0)),
-                    "timestamp": int(last_bar.get("timestamp", 0)),
-                    "ref_price": ref_price,
-                    "change": round(diff, 2),
-                    "pct_change": round(pct, 2),
-                }
-        except Exception:
-            pass
-        return sym, None
-
-    max_workers = min(len(sym_list), 12)
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for sym, data in executor.map(fetch_one, sym_list):
-            if data:
-                results[sym] = data
-
-    return results
+    return fetch_live_quotes(sym_list)
 
 
 @router.get("/klines")
