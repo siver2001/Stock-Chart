@@ -1,7 +1,15 @@
 import axios from 'axios'
 
+// Tự động nhận diện URL:
+// 1. Nếu có biến môi trường VITE_API_URL (ví dụ chạy backend riêng domain) -> dùng URL đó
+// 2. Mặc định dùng relative '/api' -> cùng domain trên Vercel hoặc qua Vite proxy localhost
+const rawApiUrl = (import.meta.env.VITE_API_URL || '').trim()
+const resolvedBaseUrl = rawApiUrl
+  ? (rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`)
+  : '/api'
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: resolvedBaseUrl,
   timeout: 30000,
 })
 
