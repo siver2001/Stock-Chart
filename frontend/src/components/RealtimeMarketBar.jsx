@@ -119,9 +119,10 @@ export default function RealtimeMarketBar({ activeSymbol, activePeriod, latestBa
     }).format(val)
   }
 
-  const isUp = latestBar && latestBar.open ? latestBar.close >= latestBar.open : true
-  const priceDiff = latestBar && latestBar.open ? latestBar.close - latestBar.open : 0
-  const pctDiff = latestBar && latestBar.open ? (priceDiff / latestBar.open) * 100 : 0
+  const refPrice = latestBar?.ref_price || latestBar?.open || 0
+  const priceDiff = latestBar && refPrice ? latestBar.close - refPrice : 0
+  const pctDiff = latestBar && refPrice ? (priceDiff / refPrice) * 100 : 0
+  const isUp = priceDiff >= 0
 
   return (
     <div className="tv-realtime-market-bar">

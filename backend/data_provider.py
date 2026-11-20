@@ -150,8 +150,8 @@ DEFAULT_VN_SYMBOLS: List[Dict[str, str]] = [
 
 # Simple in-memory TTL Cache: key -> (expire_ts, DataFrame)
 _CACHE: Dict[str, Tuple[float, pd.DataFrame]] = {}
-CACHE_TTL_DAILY = 180       # 3 minutes for daily
-CACHE_TTL_INTRADAY = 15     # 15 seconds for live intraday
+CACHE_TTL_DAILY = 5         # 5 seconds for real-time responsiveness
+CACHE_TTL_INTRADAY = 2      # 2 seconds for live intraday ticks
 
 
 def _normalize_interval(interval: str) -> str:

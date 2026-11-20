@@ -112,6 +112,7 @@ def get_latest(
 ):
     """
     Returns the latest OHLCV bar for polling in intraday / real-time updates.
+    Includes reference price (yesterday's close) and accurate day change / pct_change.
     """
     try:
         sym_str = symbol if isinstance(symbol, str) else getattr(symbol, "default", "VNINDEX")
@@ -119,7 +120,22 @@ def get_latest(
         df, _ = fetch_ohlcv(symbol=sym_str, interval=int_str)
         if df.empty:
             raise HTTPException(status_code=404, detail="No bar available")
-        return df.iloc[-1].to_dict()
+        last_bar = df.iloc[-1].to_dict()
+        c = float(last_bar.get("close", 0.0))
+        o = float(last_bar.get("open", c))
+
+        ref_price = o
+        if len(df) >= 2:
+            prev_bar = df.iloc[-2].to_dict()
+            ref_price = float(prev_bar.get("close", o))
+
+        diff = c - ref_price
+        pct = (diff / ref_price * 100.0) if ref_price != 0 else 0.0
+
+        last_bar["ref_price"] = ref_price
+        last_bar["change"] = round(diff, 2)
+        last_bar["pct_change"] = round(pct, 2)
+        return last_bar
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -128,7 +144,7 @@ def get_latest(
 def get_quotes(symbols: str = Query(default="VNINDEX,VN30,FPT,HPG,VCB,SSI,MWG,TCB")):
     """
     Returns latest price, open, high, low, volume, change, and pct_change
-    for multiple symbols simultaneously in parallel.
+    relative to reference price (yesterday's close) for multiple symbols in parallel.
     """
     sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
     if not sym_list:
@@ -143,8 +159,15 @@ def get_quotes(symbols: str = Query(default="VNINDEX,VN30,FPT,HPG,VCB,SSI,MWG,TC
                 last_bar = df.iloc[-1].to_dict()
                 c = float(last_bar.get("close", 0.0))
                 o = float(last_bar.get("open", c))
-                diff = c - o
-                pct = (diff / o * 100.0) if o != 0 else 0.0
+
+                # Giá tham chiếu là giá đóng cửa phiên hôm trước (Ref price = Yesterday close)
+                ref_price = o
+                if len(df) >= 2:
+                    prev_bar = df.iloc[-2].to_dict()
+                    ref_price = float(prev_bar.get("close", o))
+
+                diff = c - ref_price
+                pct = (diff / ref_price * 100.0) if ref_price != 0 else 0.0
                 return sym, {
                     "symbol": sym,
                     "close": c,
@@ -153,7 +176,8 @@ def get_quotes(symbols: str = Query(default="VNINDEX,VN30,FPT,HPG,VCB,SSI,MWG,TC
                     "low": float(last_bar.get("low", c)),
                     "volume": float(last_bar.get("volume", 0.0)),
                     "timestamp": int(last_bar.get("timestamp", 0)),
-                    "change": diff,
+                    "ref_price": ref_price,
+                    "change": round(diff, 2),
                     "pct_change": round(pct, 2),
                 }
         except Exception:

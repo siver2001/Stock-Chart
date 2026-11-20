@@ -317,8 +317,22 @@ export default function App() {
     const loadData = async () => {
       const bars = await datafeed.getHistoryKLineData(activeSymbol, activePeriod)
       if (bars && bars.length > 0) {
-        chart.applyNewData(bars)
-        setLatestBar(bars[bars.length - 1])
+        chart.applyNewData(bars, false, () => {
+          chart.setBarSpace(9)
+          chart.setOffsetRightDistance(60)
+          chart.scrollToRealTime()
+        })
+        const last = bars[bars.length - 1]
+        const prev = bars.length >= 2 ? bars[bars.length - 2] : null
+        const ref = prev ? prev.close : last.open
+        const diff = last.close - ref
+        const pct = ref ? (diff / ref) * 100 : 0
+        setLatestBar({
+          ...last,
+          ref_price: ref,
+          change: diff,
+          pct_change: pct,
+        })
       }
 
       // Add default indicators: MA and VOL overlayed directly on the main candlestick chart like TradingView!
@@ -332,7 +346,17 @@ export default function App() {
       // Subscribe for live polling
       datafeed.subscribe(activeSymbol, activePeriod, (bar) => {
         chart.updateData(bar)
-        setLatestBar(bar)
+        setLatestBar((prev) => {
+          const ref = bar.ref_price || prev?.ref_price || (bars.length >= 2 ? bars[bars.length - 2].close : bar.open)
+          const diff = bar.close - ref
+          const pct = ref ? (diff / ref) * 100 : 0
+          return {
+            ...bar,
+            ref_price: ref,
+            change: diff,
+            pct_change: pct,
+          }
+        })
       })
     }
 
@@ -371,14 +395,42 @@ export default function App() {
     const isIndex = ticker.includes('INDEX') || ticker.includes('VN30')
     chartInstanceRef.current.setPriceVolumePrecision(isIndex ? 2 : 0, 0)
 
+    // Xóa dữ liệu cũ để KlineCharts tính lại thang đo giá Y-axis từ đầu cho mã mới
+    chartInstanceRef.current.clearData()
+
     const bars = await datafeedRef.current.getHistoryKLineData(ticker, activePeriod)
     if (bars && bars.length > 0) {
-      chartInstanceRef.current.applyNewData(bars)
-      setLatestBar(bars[bars.length - 1])
+      chartInstanceRef.current.applyNewData(bars, false, () => {
+        // Tự động căn chỉnh vừa mắt người xem: zoom chuẩn 9px, lề phải 60px như TradingView
+        chartInstanceRef.current?.setBarSpace(9)
+        chartInstanceRef.current?.setOffsetRightDistance(60)
+        chartInstanceRef.current?.scrollToRealTime()
+      })
+      const last = bars[bars.length - 1]
+      const prev = bars.length >= 2 ? bars[bars.length - 2] : null
+      const ref = prev ? prev.close : last.open
+      const diff = last.close - ref
+      const pct = ref ? (diff / ref) * 100 : 0
+      setLatestBar({
+        ...last,
+        ref_price: ref,
+        change: diff,
+        pct_change: pct,
+      })
     }
     datafeedRef.current.subscribe(ticker, activePeriod, (bar) => {
       chartInstanceRef.current.updateData(bar)
-      setLatestBar(bar)
+      setLatestBar((prev) => {
+        const ref = bar.ref_price || prev?.ref_price || (bars.length >= 2 ? bars[bars.length - 2].close : bar.open)
+        const diff = bar.close - ref
+        const pct = ref ? (diff / ref) * 100 : 0
+        return {
+          ...bar,
+          ref_price: ref,
+          change: diff,
+          pct_change: pct,
+        }
+      })
     })
   }, [activePeriod, activeSymbol])
 
@@ -388,14 +440,40 @@ export default function App() {
     if (!chartInstanceRef.current || !datafeedRef.current) return
 
     datafeedRef.current.unsubscribe(activeSymbol, activePeriod)
+    chartInstanceRef.current.clearData()
+
     const bars = await datafeedRef.current.getHistoryKLineData(activeSymbol, period)
     if (bars && bars.length > 0) {
-      chartInstanceRef.current.applyNewData(bars)
-      setLatestBar(bars[bars.length - 1])
+      chartInstanceRef.current.applyNewData(bars, false, () => {
+        chartInstanceRef.current?.setBarSpace(9)
+        chartInstanceRef.current?.setOffsetRightDistance(60)
+        chartInstanceRef.current?.scrollToRealTime()
+      })
+      const last = bars[bars.length - 1]
+      const prev = bars.length >= 2 ? bars[bars.length - 2] : null
+      const ref = prev ? prev.close : last.open
+      const diff = last.close - ref
+      const pct = ref ? (diff / ref) * 100 : 0
+      setLatestBar({
+        ...last,
+        ref_price: ref,
+        change: diff,
+        pct_change: pct,
+      })
     }
     datafeedRef.current.subscribe(activeSymbol, period, (bar) => {
       chartInstanceRef.current.updateData(bar)
-      setLatestBar(bar)
+      setLatestBar((prev) => {
+        const ref = bar.ref_price || prev?.ref_price || (bars.length >= 2 ? bars[bars.length - 2].close : bar.open)
+        const diff = bar.close - ref
+        const pct = ref ? (diff / ref) * 100 : 0
+        return {
+          ...bar,
+          ref_price: ref,
+          change: diff,
+          pct_change: pct,
+        }
+      })
     })
   }, [activeSymbol, activePeriod])
 

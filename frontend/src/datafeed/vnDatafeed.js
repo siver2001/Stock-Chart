@@ -105,12 +105,15 @@ export class VNStockDatafeed {
             low: Number(latest.low),
             close: Number(latest.close),
             volume: Number(latest.volume),
+            ref_price: latest.ref_price ? Number(latest.ref_price) : undefined,
+            change: latest.change ? Number(latest.change) : undefined,
+            pct_change: latest.pct_change ? Number(latest.pct_change) : undefined,
           })
         }
       } catch {
         // silent polling ignore
       }
-    }, 10000)
+    }, 2000)
 
     this._subscribers.set(subKey, timer)
   }

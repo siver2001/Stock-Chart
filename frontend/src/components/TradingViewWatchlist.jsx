@@ -95,7 +95,7 @@ export default function TradingViewWatchlist({
     }
 
     loadQuotes()
-    const interval = setInterval(loadQuotes, 5000)
+    const interval = setInterval(loadQuotes, 3000)
     return () => {
       isMounted = false
       clearInterval(interval)
@@ -106,18 +106,21 @@ export default function TradingViewWatchlist({
   useEffect(() => {
     if (activeSymbol && latestBar && latestBar.close != null) {
       setQuotes((prev) => {
-        const open = latestBar.open || latestBar.close
-        const diff = latestBar.close - open
-        const pct = open ? (diff / open) * 100 : 0
+        const existing = prev[activeSymbol]
+        const refPrice = latestBar.ref_price || existing?.ref_price || latestBar.open || latestBar.close
+        const diff = latestBar.close - refPrice
+        const pct = refPrice ? (diff / refPrice) * 100 : 0
         return {
           ...prev,
           [activeSymbol]: {
+            ...existing,
             symbol: activeSymbol,
             close: latestBar.close,
             open: latestBar.open,
             high: latestBar.high,
             low: latestBar.low,
             volume: latestBar.volume,
+            ref_price: refPrice,
             change: diff,
             pct_change: Number(pct.toFixed(2)),
             timestamp: latestBar.timestamp,
@@ -193,8 +196,8 @@ export default function TradingViewWatchlist({
   const activeQuote = quotes[activeSymbol]
   const activePriceChange = activeQuote
     ? activeQuote.pct_change
-    : latestBar && latestBar.open
-    ? ((latestBar.close - latestBar.open) / latestBar.open) * 100
+    : latestBar && (latestBar.ref_price || latestBar.open)
+    ? ((latestBar.close - (latestBar.ref_price || latestBar.open)) / (latestBar.ref_price || latestBar.open)) * 100
     : 0
   const isActiveUp = activePriceChange >= 0
 
@@ -304,9 +307,9 @@ export default function TradingViewWatchlist({
               pctStr = `${isUp ? '+' : ''}${pct.toFixed(2)}%`
             } else if (isActive && latestBar && latestBar.close != null) {
               priceStr = formatPrice(latestBar.close, sym)
-              const open = latestBar.open || latestBar.close
-              const diff = latestBar.close - open
-              const pct = open ? (diff / open) * 100 : 0
+              const refPrice = latestBar.ref_price || quote?.ref_price || latestBar.open || latestBar.close
+              const diff = latestBar.close - refPrice
+              const pct = refPrice ? (diff / refPrice) * 100 : 0
               isUp = pct >= 0
               pctStr = `${isUp ? '+' : ''}${pct.toFixed(2)}%`
             }
