@@ -8,6 +8,32 @@
   padding: 0;
 }
 
+/* Universal Base Reset for Interactive Controls (Buttons, Inputs, Selects) */
+button {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  padding: 0;
+  margin: 0;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  outline: none;
+  background: transparent;
+  border: none;
+}
+
 html, body, #root {
   height: 100%;
   width: 100%;
@@ -434,59 +460,142 @@ body.theme-light .tv-custom-tf-select {
   background-color: #1e53e5;
 }
 
-/* Header Action buttons */
+/* Header Action buttons (Right Toolbar) */
+.tv-icon-btn,
 .tv-icon-action-btn {
-  background: transparent;
-  border: none;
-  color: #787b86;
-  padding: 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 32px;
+  height: 28px;
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #787b86;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
 }
+
+.tv-icon-btn:hover,
 .tv-icon-action-btn:hover {
   background-color: #2a2e39;
+  border-color: #363a45;
   color: #f0f3fa;
 }
+
+.tv-icon-btn:active,
+.tv-icon-action-btn:active {
+  background-color: #363a45;
+}
+
+body.theme-light .tv-icon-btn,
+body.theme-light .tv-icon-action-btn {
+  color: #50535e;
+}
+
+body.theme-light .tv-icon-btn:hover,
 body.theme-light .tv-icon-action-btn:hover {
   background-color: #e0e3eb;
+  border-color: #b2b5be;
   color: #131722;
 }
 
+/* Header Pill / Tab Buttons (Watchlist & Backtest Engine) */
+.tv-header-btn,
 .tv-header-tab-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: transparent;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  background-color: rgba(255, 255, 255, 0.04);
   border: 1px solid #2a2e39;
-  color: #d1d4dc;
-  padding: 4px 9px;
   border-radius: 4px;
+  color: #d1d4dc;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  user-select: none;
 }
-body.theme-light .tv-header-tab-btn {
-  border-color: #e0e3eb;
-  color: #131722;
-}
+
+.tv-header-btn:hover,
 .tv-header-tab-btn:hover {
   background-color: #2a2e39;
-}
-body.theme-light .tv-header-tab-btn:hover {
-  background-color: #e0e3eb;
-}
-.tv-header-tab-btn.active {
-  background-color: #2962ff;
-  border-color: #2962ff;
+  border-color: #363a45;
   color: #ffffff;
 }
 
+/* Watchlist Trigger Active State */
+.tv-header-btn.active,
+.tv-header-tab-btn.active {
+  background: rgba(41, 98, 255, 0.15);
+  border-color: #2962ff;
+  color: #58a6ff;
+  box-shadow: 0 0 8px rgba(41, 98, 255, 0.25);
+}
+
+/* Backtest Engine Trigger Custom Accent */
+.tv-header-btn.tv-backtest-trigger,
 .tv-btn-backtest {
-  border-color: rgba(88, 166, 255, 0.4);
+  border-color: rgba(227, 179, 65, 0.35);
+  color: #d1d4dc;
+}
+
+.tv-header-btn.tv-backtest-trigger:hover,
+.tv-btn-backtest:hover {
+  background-color: rgba(227, 179, 65, 0.12);
+  border-color: rgba(227, 179, 65, 0.6);
+  color: #f1e05a;
+}
+
+.tv-header-btn.tv-backtest-trigger.active,
+.tv-btn-backtest.active {
+  background: linear-gradient(135deg, rgba(227, 179, 65, 0.22) 0%, rgba(227, 179, 65, 0.08) 100%);
+  border-color: #e3b341;
+  color: #f59e0b;
+  box-shadow: 0 0 10px rgba(227, 179, 65, 0.3);
+}
+
+/* Light Theme Styling for Header Buttons */
+body.theme-light .tv-header-btn,
+body.theme-light .tv-header-tab-btn {
+  background-color: #ffffff;
+  border-color: #e0e3eb;
+  color: #131722;
+}
+
+body.theme-light .tv-header-btn:hover,
+body.theme-light .tv-header-tab-btn:hover {
+  background-color: #f0f3fa;
+  border-color: #b2b5be;
+  color: #131722;
+}
+
+body.theme-light .tv-header-btn.active,
+body.theme-light .tv-header-tab-btn.active {
+  background-color: #e8f0fe;
+  border-color: #2962ff;
+  color: #2962ff;
+}
+
+body.theme-light .tv-header-btn.tv-backtest-trigger {
+  border-color: rgba(217, 119, 6, 0.35);
+  background-color: #ffffff;
+}
+
+body.theme-light .tv-header-btn.tv-backtest-trigger:hover {
+  background-color: #fef9e7;
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
+body.theme-light .tv-header-btn.tv-backtest-trigger.active {
+  background-color: #fef3c7;
+  border-color: #d97706;
+  color: #b45309;
 }
 
 .tv-icon-dim {

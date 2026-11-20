@@ -443,7 +443,7 @@ export default function TradingViewHeader({
 
         {/* Watchlist Toggle */}
         <button
-          className={`tv-header-btn ${showWatchlist ? 'active' : ''}`}
+          className={`tv-header-btn tv-watchlist-trigger ${showWatchlist ? 'active' : ''}`}
           onClick={onToggleWatchlist}
           title="Bật/Tắt thanh Watchlist theo dõi mã chứng khoán"
         >
