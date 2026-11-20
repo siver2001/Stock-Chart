@@ -27,7 +27,7 @@ export class VNStockDatafeed {
       market: item.market || 'stocks',
       priceCurrency: item.priceCurrency || 'VND',
       type: item.type || 'CS',
-      pricePrecision: 0,
+      pricePrecision: 2,
       volumePrecision: 0,
     }))
   }

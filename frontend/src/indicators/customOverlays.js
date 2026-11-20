@@ -2,7 +2,13 @@ import { registerOverlay } from 'klinecharts'
 
 let registered = false
 
-const formatNum = (v) => (v != null ? new Intl.NumberFormat('vi-VN').format(Math.round(v)) : '--')
+const formatNum = (v) =>
+  v != null
+    ? new Intl.NumberFormat('vi-VN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(v)
+    : '--'
 
 export function registerCustomOverlays() {
   if (registered) return

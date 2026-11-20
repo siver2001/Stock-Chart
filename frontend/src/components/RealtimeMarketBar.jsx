@@ -112,10 +112,9 @@ export default function RealtimeMarketBar({ activeSymbol, activePeriod, latestBa
 
   const formatPrice = (val) => {
     if (val == null) return '--'
-    const isIndex = activeSymbol?.toUpperCase().includes('INDEX') || activeSymbol?.toUpperCase().includes('VN30')
     return new Intl.NumberFormat('vi-VN', {
-      minimumFractionDigits: isIndex ? 2 : 0,
-      maximumFractionDigits: isIndex ? 2 : 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(val)
   }
 

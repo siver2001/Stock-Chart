@@ -102,12 +102,13 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         exec_price = raw_price * (1.0 + config.slippage_rate)
         if exec_price <= 0:
             return
-        cost_per_share = exec_price * (1.0 + config.buy_fee_rate)
+        scale = 1000.0 if raw_price < 500.0 else 1.0
+        cost_per_share = (exec_price * scale) * (1.0 + config.buy_fee_rate)
         max_lots = int(cash // (cost_per_share * config.lot_size))
         qty = max_lots * config.lot_size
         if qty <= 0:
             return
-        gross = qty * exec_price
+        gross = qty * (exec_price * scale)
         fee = gross * config.buy_fee_rate
         cash -= (gross + fee)
         shares = qty
@@ -121,12 +122,13 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         if shares <= 0:
             return
         exec_price = raw_price * (1.0 - config.slippage_rate)
-        gross_sell = shares * exec_price
+        scale = 1000.0 if raw_price < 500.0 else 1.0
+        gross_sell = shares * (exec_price * scale)
         sell_fee = gross_sell * config.sell_fee_rate
         sell_tax = gross_sell * config.sell_tax_rate
         net_proceeds = gross_sell - sell_fee - sell_tax
 
-        buy_cost = shares * entry_price + entry_fee
+        buy_cost = shares * (entry_price * scale) + entry_fee
         net_pnl = net_proceeds - buy_cost
         pnl_pct = (net_pnl / buy_cost) * 100.0 if buy_cost > 0 else 0.0
 
@@ -178,7 +180,8 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
                 pending_sell = False
 
         # 3. Record end-of-bar equity
-        mtm_equity = cash + shares * closes[i]
+        scale = 1000.0 if closes[i] < 500.0 else 1.0
+        mtm_equity = cash + shares * closes[i] * scale
         equity_curve.append({
             "timestamp": int(ts[i]),
             "date": pd.to_datetime(int(ts[i]), unit="ms").strftime("%Y-%m-%d"),

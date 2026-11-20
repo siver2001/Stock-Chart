@@ -190,16 +190,24 @@ export default function TradingViewWatchlist({
     setActiveColorPickerSym(null)
   }
 
-  const formatPrice = (val, sym) => {
+  const formatPrice = (val) => {
     if (val == null) return '--'
-    const isIndex = sym === 'VNINDEX' || sym === 'VN30'
     return new Intl.NumberFormat('vi-VN', {
-      minimumFractionDigits: isIndex ? 2 : 0,
-      maximumFractionDigits: isIndex ? 2 : 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(val)
   }
 
-  const formatNum = (n) => (n != null ? new Intl.NumberFormat('vi-VN').format(Math.round(n)) : '--')
+  const formatNum = (n) =>
+    n != null
+      ? new Intl.NumberFormat('vi-VN', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(n)
+      : '--'
+
+  const formatVol = (v) =>
+    v != null ? new Intl.NumberFormat('vi-VN').format(Math.round(v)) : '--'
 
   // Filtered and Sorted Symbols
   const filteredSymbols = symbols.filter((sym) => {
@@ -479,7 +487,7 @@ export default function TradingViewWatchlist({
             </div>
             <div className="tv-detail-item" style={{ gridColumn: 'span 2' }}>
               <span className="tv-detail-lbl">Khối lượng (Volume)</span>
-              <span className="tv-detail-val">{formatNum(latestBar.volume)} CP</span>
+              <span className="tv-detail-val">{formatVol(latestBar.volume)} CP</span>
             </div>
           </div>
         </div>
