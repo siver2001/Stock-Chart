@@ -181,6 +181,111 @@ export default function App() {
 
   const inProgressOverlayIdRef = useRef(null)
 
+  // Persistent drawings state
+  const [drawingsCount, setDrawingsCount] = useState(0)
+  const activeSymbolRef = useRef(activeSymbol)
+  activeSymbolRef.current = activeSymbol
+
+  // Save all completed drawings for a specific symbol to localStorage
+  const saveDrawingsForSymbol = useCallback((symbol) => {
+    const sym = symbol || activeSymbolRef.current
+    if (!chartInstanceRef.current || !sym) return
+    try {
+      const overlayStore = chartInstanceRef.current._chartStore?.getOverlayStore?.()
+      if (!overlayStore) return
+      const instances = overlayStore.getInstances() || []
+
+      const validOverlays = instances
+        .filter(
+          (inst) =>
+            inst &&
+            inst.name &&
+            inst.points &&
+            inst.points.length > 0 &&
+            inst.id !== inProgressOverlayIdRef.current
+        )
+        .map((inst) => ({
+          id: inst.id,
+          name: inst.name,
+          groupId: inst.groupId,
+          paneId: inst.paneId || 'candle_pane',
+          points: inst.points.map((pt) => ({
+            timestamp: pt.timestamp,
+            dataIndex: pt.dataIndex,
+            value: pt.value,
+          })),
+          styles: inst.styles || {},
+          lock: Boolean(inst.lock),
+          visible: inst.visible !== false,
+          mode: inst.mode,
+          extendData: inst.extendData,
+        }))
+
+      const storageKey = `vn_drawings_${sym.toUpperCase()}`
+      localStorage.setItem(storageKey, JSON.stringify(validOverlays))
+      setDrawingsCount(validOverlays.length)
+    } catch (err) {
+      console.warn('Failed to save drawings:', err)
+    }
+  }, [])
+
+  // Restore saved drawings for a symbol from localStorage
+  const restoreDrawingsForSymbol = useCallback(
+    (symbol) => {
+      const sym = symbol || activeSymbolRef.current
+      if (!chartInstanceRef.current || !sym) return
+      try {
+        const storageKey = `vn_drawings_${sym.toUpperCase()}`
+        const raw = localStorage.getItem(storageKey)
+        if (!raw) {
+          setDrawingsCount(0)
+          return
+        }
+        const list = JSON.parse(raw)
+        if (!Array.isArray(list) || list.length === 0) {
+          setDrawingsCount(0)
+          return
+        }
+
+        list.forEach((item) => {
+          if (!item.name || !item.points || item.points.length === 0) return
+          chartInstanceRef.current.createOverlay(
+            {
+              id: item.id,
+              name: item.name,
+              groupId: item.groupId,
+              points: item.points,
+              styles: item.styles,
+              lock: item.lock,
+              visible: item.visible,
+              mode: item.mode,
+              extendData: item.extendData,
+              onSelected: (event) => setSelectedOverlay(event.overlay),
+              onDeselected: () => setSelectedOverlay(null),
+              onRightClick: (event) => {
+                if (event?.overlay?.id) {
+                  chartInstanceRef.current.removeOverlay(event.overlay.id)
+                  setTimeout(() => saveDrawingsForSymbol(sym), 60)
+                }
+                setSelectedOverlay(null)
+                return true
+              },
+              onPressedMoveEnd: () => {
+                setTimeout(() => saveDrawingsForSymbol(sym), 60)
+              },
+            },
+            item.paneId || 'candle_pane'
+          )
+        })
+        setDrawingsCount(list.length)
+      } catch (err) {
+        console.warn('Failed to restore drawings:', err)
+        setDrawingsCount(0)
+      }
+    },
+    [saveDrawingsForSymbol]
+  )
+
   // Cancel currently drawing overlay or deselect
   const cancelCurrentDrawing = useCallback(() => {
     if (!chartInstanceRef.current) return
@@ -219,6 +324,9 @@ export default function App() {
         if (selectedOverlayRef.current && chartInstanceRef.current) {
           chartInstanceRef.current.removeOverlay(selectedOverlayRef.current.id)
           setSelectedOverlay(null)
+          setTimeout(() => {
+            saveDrawingsForSymbol(activeSymbolRef.current)
+          }, 60)
         }
       } else if (e.key === 'Escape') {
         // Pressing Escape cancels whatever tool is currently active/drawing or deselects
@@ -321,6 +429,7 @@ export default function App() {
           chart.setBarSpace(9)
           chart.setOffsetRightDistance(60)
           chart.scrollToRealTime()
+          restoreDrawingsForSymbol(activeSymbol)
         })
         const last = bars[bars.length - 1]
         const prev = bars.length >= 2 ? bars[bars.length - 2] : null
@@ -388,14 +497,21 @@ export default function App() {
   // Switch Symbol
   const handleSelectSymbol = useCallback(async (sym) => {
     const ticker = sym.toUpperCase()
-    setActiveSymbol(ticker)
     if (!chartInstanceRef.current || !datafeedRef.current) return
 
+    // 1. Tự động lưu bản vẽ của cổ phiếu hiện tại trước khi chuyển sang cổ phiếu mới
+    saveDrawingsForSymbol(activeSymbol)
+
+    setActiveSymbol(ticker)
     datafeedRef.current.unsubscribe(activeSymbol, activePeriod)
     const isIndex = ticker.includes('INDEX') || ticker.includes('VN30')
     chartInstanceRef.current.setPriceVolumePrecision(isIndex ? 2 : 0, 0)
 
-    // Xóa dữ liệu cũ để KlineCharts tính lại thang đo giá Y-axis từ đầu cho mã mới
+    // 2. Xóa các hình vẽ cũ trên canvas của mã cũ
+    chartInstanceRef.current.removeOverlay()
+    setSelectedOverlay(null)
+
+    // 3. Xóa dữ liệu cũ để KlineCharts tính lại thang đo giá Y-axis từ đầu cho mã mới
     chartInstanceRef.current.clearData()
 
     const bars = await datafeedRef.current.getHistoryKLineData(ticker, activePeriod)
@@ -405,6 +521,9 @@ export default function App() {
         chartInstanceRef.current?.setBarSpace(9)
         chartInstanceRef.current?.setOffsetRightDistance(60)
         chartInstanceRef.current?.scrollToRealTime()
+
+        // 4. Khôi phục lại toàn bộ hình vẽ đã lưu trước đó của mã mới!
+        restoreDrawingsForSymbol(ticker)
       })
       const last = bars[bars.length - 1]
       const prev = bars.length >= 2 ? bars[bars.length - 2] : null
@@ -432,14 +551,19 @@ export default function App() {
         }
       })
     })
-  }, [activePeriod, activeSymbol])
+  }, [activePeriod, activeSymbol, saveDrawingsForSymbol, restoreDrawingsForSymbol])
 
   // Switch Period
   const handlePeriodChange = useCallback(async (period) => {
     setActivePeriod(period)
     if (!chartInstanceRef.current || !datafeedRef.current) return
 
+    // Lưu lại hình vẽ hiện tại
+    saveDrawingsForSymbol(activeSymbol)
+
     datafeedRef.current.unsubscribe(activeSymbol, activePeriod)
+    chartInstanceRef.current.removeOverlay()
+    setSelectedOverlay(null)
     chartInstanceRef.current.clearData()
 
     const bars = await datafeedRef.current.getHistoryKLineData(activeSymbol, period)
@@ -448,6 +572,9 @@ export default function App() {
         chartInstanceRef.current?.setBarSpace(9)
         chartInstanceRef.current?.setOffsetRightDistance(60)
         chartInstanceRef.current?.scrollToRealTime()
+
+        // Khôi phục hình vẽ trên khung thời gian mới
+        restoreDrawingsForSymbol(activeSymbol)
       })
       const last = bars[bars.length - 1]
       const prev = bars.length >= 2 ? bars[bars.length - 2] : null
@@ -475,7 +602,7 @@ export default function App() {
         }
       })
     })
-  }, [activeSymbol, activePeriod])
+  }, [activeSymbol, activePeriod, saveDrawingsForSymbol, restoreDrawingsForSymbol])
 
   // Switch Chart Type (Candles, Hollow, Bars OHLC, Area)
   const handleChartTypeChange = (type) => {
@@ -615,6 +742,14 @@ export default function App() {
           if (event && event.overlay) {
             setSelectedOverlay(event.overlay)
           }
+          setTimeout(() => {
+            saveDrawingsForSymbol(activeSymbolRef.current)
+          }, 60)
+        },
+        onPressedMoveEnd: () => {
+          setTimeout(() => {
+            saveDrawingsForSymbol(activeSymbolRef.current)
+          }, 60)
         },
         onSelected: (event) => {
           setSelectedOverlay(event.overlay)
@@ -625,6 +760,9 @@ export default function App() {
         onRightClick: (event) => {
           if (event?.overlay?.id) {
             chartInstanceRef.current.removeOverlay(event.overlay.id)
+            setTimeout(() => {
+              saveDrawingsForSymbol(activeSymbolRef.current)
+            }, 60)
           }
           setSelectedOverlay(null)
           return true
@@ -644,6 +782,9 @@ export default function App() {
     if (!chartInstanceRef.current) return
     chartInstanceRef.current.removeOverlay(overlayId)
     setSelectedOverlay(null)
+    setTimeout(() => {
+      saveDrawingsForSymbol(activeSymbolRef.current)
+    }, 60)
   }
 
   const handleUpdateOverlayStyle = (styles) => {
@@ -652,6 +793,13 @@ export default function App() {
       id: selectedOverlayRef.current.id,
       styles,
     })
+    setSelectedOverlay((prev) => ({
+      ...prev,
+      styles: { ...prev?.styles, ...styles },
+    }))
+    setTimeout(() => {
+      saveDrawingsForSymbol(activeSymbolRef.current)
+    }, 60)
   }
 
   const handleToggleOverlayLock = () => {
@@ -662,12 +810,17 @@ export default function App() {
       lock: nextLock,
     })
     setSelectedOverlay((prev) => (prev ? { ...prev, lock: nextLock } : null))
+    setTimeout(() => {
+      saveDrawingsForSymbol(activeSymbolRef.current)
+    }, 60)
   }
 
   const handleClearOverlays = () => {
     if (chartInstanceRef.current) {
       chartInstanceRef.current.removeOverlay()
       setSelectedOverlay(null)
+      localStorage.removeItem(`vn_drawings_${activeSymbolRef.current.toUpperCase()}`)
+      setDrawingsCount(0)
     }
   }
 
@@ -721,6 +874,7 @@ export default function App() {
         showBacktest={showBacktest}
         onToggleBacktest={() => setShowBacktest((s) => !s)}
         onScreenshot={handleScreenshot}
+        drawingsCount={drawingsCount}
       />
 
       {/* Main Workspace */}

@@ -13,6 +13,7 @@ import {
   Clock,
   Star,
   Plus,
+  Cloud,
 } from 'lucide-react'
 
 export const ALL_TIMEFRAME_GROUPS = [
@@ -90,6 +91,7 @@ export default function TradingViewHeader({
   showBacktest,
   onToggleBacktest,
   onScreenshot,
+  drawingsCount = 0,
 }) {
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false)
   const [showChartTypeDropdown, setShowChartTypeDropdown] = useState(false)
@@ -408,6 +410,17 @@ export default function TradingViewHeader({
 
       {/* Right Controls */}
       <div className="tv-header-right">
+        {/* Auto-saved Drawings Indicator */}
+        <div
+          className="tv-drawings-save-status"
+          title={`Tất cả hình vẽ phân tích kỹ thuật của mã ${activeSymbol} được tự động lưu vào bộ nhớ trình duyệt`}
+        >
+          <Cloud size={14} color="#089981" />
+          <span>{drawingsCount > 0 ? `Đã lưu (${drawingsCount})` : 'Tự động lưu'}</span>
+        </div>
+
+        <div className="tv-divider" />
+
         {/* Screenshot Camera */}
         <button
           className="tv-icon-btn"

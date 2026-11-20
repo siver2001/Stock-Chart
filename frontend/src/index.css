@@ -2161,6 +2161,26 @@ body.theme-light .tv-rt-clock-time {
   color: #131722;
 }
 
+.tv-drawings-save-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #089981;
+  background-color: rgba(8, 153, 129, 0.12);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(8, 153, 129, 0.28);
+  user-select: none;
+  transition: all 0.2s ease;
+}
+body.theme-light .tv-drawings-save-status {
+  background-color: #e8f8f4;
+  color: #089981;
+  border-color: #a3e7d8;
+}
+
 .tv-rt-source {
   color: #089981;
   font-weight: 600;
