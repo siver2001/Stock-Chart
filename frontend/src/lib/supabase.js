@@ -1,8 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 
 // 1. Đọc thông tin cấu hình từ biến môi trường Vite (.env hoặc .env.local)
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+// Kèm giá trị mặc định cho project Supabase của bạn
+const DEFAULT_SUPABASE_URL = 'https://eaxxqgjcxwysftflgqlm.supabase.co'
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_f_kD5wsipKmlCCWDkqDyGA_tR8APss_'
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY
 
 // Kiểm tra xem người dùng đã điền URL và Anon Key hợp lệ chưa
 export const isCloudEnabled = () => {
