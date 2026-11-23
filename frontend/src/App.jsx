@@ -28,12 +28,51 @@ export const STORAGE_KEYS = {
   INDICATOR_PARAMS: 'vn_indicator_calc_params',
 }
 
+/**
+ * Tự động căn chỉnh thang đo (Auto-Scale / Auto-Fit) chuẩn 100% TradingView
+ * - Reset cờ autoCalcTickFlag cho toàn bộ panes (Candle pane & Indicator sub-panes)
+ * - Tự động tính toán lại min/max giá chính xác theo mã cổ phiếu mới
+ * - Giữ zoom chuẩn 9px và lề phải 60px
+ */
+export const resetChartScale = (chart, resetHorizontal = true) => {
+  if (!chart) return
+  try {
+    const panes = typeof chart.getAllDrawPanes === 'function' ? chart.getAllDrawPanes() : (chart._drawPanes || [])
+    panes.forEach((pane) => {
+      try {
+        const axis = pane?.getAxisComponent?.()
+        if (axis && typeof axis.setAutoCalcTickFlag === 'function') {
+          axis.setAutoCalcTickFlag(true)
+        }
+      } catch {}
+    })
+
+    if (typeof chart.adjustPaneViewport === 'function') {
+      chart.adjustPaneViewport(true, true, true, true, true)
+    }
+
+    if (resetHorizontal) {
+      chart.setBarSpace?.(9)
+      chart.setOffsetRightDistance?.(60)
+      chart.scrollToRealTime?.()
+    }
+  } catch (err) {
+    console.warn('resetChartScale error:', err)
+  }
+}
+
 const getThemeStyles = (theme, chartType = 'candle_solid') => {
   const isDark = theme === 'dark'
   return {
     grid: {
       horizontal: { color: isDark ? '#1f2937' : '#f0f3f6', style: 'dash' },
       vertical: { color: isDark ? '#1f2937' : '#f0f3f6', style: 'dash' },
+    },
+    separator: {
+      size: 2,
+      color: isDark ? '#2a2e39' : '#e0e3eb',
+      fill: true,
+      activeBackgroundColor: isDark ? 'rgba(41, 98, 255, 0.45)' : 'rgba(37, 99, 235, 0.35)',
     },
     candle: {
       type: chartType,
@@ -435,6 +474,142 @@ export default function App() {
     return () => el.removeEventListener('contextmenu', handleContextMenu)
   }, [activeDrawingTool, cancelCurrentDrawing])
 
+  // Mượt mà hóa thao tác kéo lên/kéo xuống & zoom trục giá Y như TradingView:
+  // - Kéo dọc trực tiếp trên biểu đồ: Tự động mở khóa autoCalcTickFlag để pan dọc mượt mà
+  // - Cuộn chuột trên thước đo giá Y (bên phải): Zoom co giãn thang đo giá mượt mà
+  // - Double-click bất kỳ đâu trên biểu đồ hoặc thanh thước đo giá: Reset căn chỉnh tự động (Auto Scale)
+  useEffect(() => {
+    const el = chartElRef.current
+    if (!el) return
+
+    let isPointerDown = false
+    let startX = 0
+    let startY = 0
+    let hasUnlockedVertical = false
+
+    const handlePointerDown = (e) => {
+      if (e.button !== 0) return
+      isPointerDown = true
+      startX = e.clientX
+      startY = e.clientY
+      hasUnlockedVertical = false
+    }
+
+    const handlePointerMove = (e) => {
+      if (!isPointerDown) return
+      const chart = chartInstanceRef.current
+      if (!chart) return
+
+      // Không can thiệp nếu người dùng đang dùng công cụ vẽ
+      const overlayStore = chart._chartStore?.getOverlayStore?.()
+      const isDrawing =
+        Boolean(overlayStore?.getProgressInstanceInfo?.()) ||
+        Boolean(inProgressOverlayIdRef.current) ||
+        (activeDrawingTool && activeDrawingTool !== 'crosshair')
+      if (isDrawing) return
+
+      const rect = el.getBoundingClientRect()
+      const isInsideChartBody = startX < rect.right - 80 // Không phải click trực tiếp trên Y-axis
+
+      const dy = Math.abs(e.clientY - startY)
+      const dx = Math.abs(e.clientX - startX)
+
+      // Khi người dùng kéo lên/kéo xuống trên thân biểu đồ, mở khóa để KlineCharts pan tự do cả 2 trục X & Y
+      if (isInsideChartBody && !hasUnlockedVertical && dy > 5 && dy >= dx * 0.4) {
+        hasUnlockedVertical = true
+        const panes = typeof chart.getAllDrawPanes === 'function' ? chart.getAllDrawPanes() : (chart._drawPanes || [])
+        panes.forEach((pane) => {
+          try {
+            const axis = pane?.getAxisComponent?.()
+            if (axis && typeof axis.setAutoCalcTickFlag === 'function') {
+              axis.setAutoCalcTickFlag(false)
+            }
+          } catch {}
+        })
+      }
+    }
+
+    const handlePointerUp = () => {
+      isPointerDown = false
+      hasUnlockedVertical = false
+    }
+
+    // Double-click bất cứ đâu trên biểu đồ: Reset thang đo Auto-fit
+    const handleDblClick = () => {
+      resetChartScale(chartInstanceRef.current, false)
+    }
+
+    // Cuộn chuột mượt mà trên thước đo giá Y hoặc Ctrl + Wheel
+    const handleWheel = (e) => {
+      const chart = chartInstanceRef.current
+      if (!chart) return
+
+      const rect = el.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+      const chartWidth = rect.width
+      const isOverYAxis = mouseX >= chartWidth - 80
+
+      if (isOverYAxis || e.ctrlKey) {
+        e.preventDefault()
+        e.stopPropagation()
+
+        const panes = typeof chart.getAllDrawPanes === 'function' ? chart.getAllDrawPanes() : (chart._drawPanes || [])
+        let targetPane = null
+        for (const p of panes) {
+          const b = p.getBounding ? p.getBounding() : null
+          if (b && mouseY >= b.top && mouseY <= b.top + b.height) {
+            targetPane = p
+            break
+          }
+        }
+        if (!targetPane) {
+          targetPane = chart._candlePane || panes[0]
+        }
+        if (!targetPane) return
+
+        const yAxis = targetPane.getAxisComponent?.()
+        if (!yAxis) return
+
+        const zoomFactor = e.deltaY > 0 ? 1.08 : 0.92
+        const range = yAxis.getRange?.()
+        if (!range || !isFinite(range.from) || !isFinite(range.to)) return
+
+        const mid = (range.from + range.to) / 2
+        const half = ((range.to - range.from) * zoomFactor) / 2
+        const newFrom = mid - half
+        const newTo = mid + half
+
+        yAxis.setRange({
+          from: newFrom,
+          to: newTo,
+          range: newTo - newFrom,
+          realFrom: yAxis.convertToRealValue(newFrom),
+          realTo: yAxis.convertToRealValue(newTo),
+          realRange: yAxis.convertToRealValue(newTo) - yAxis.convertToRealValue(newFrom),
+        })
+
+        if (typeof chart.adjustPaneViewport === 'function') {
+          chart.adjustPaneViewport(false, true, true, true)
+        }
+      }
+    }
+
+    el.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    el.addEventListener('dblclick', handleDblClick)
+    el.addEventListener('wheel', handleWheel, { passive: false })
+
+    return () => {
+      el.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      el.removeEventListener('dblclick', handleDblClick)
+      el.removeEventListener('wheel', handleWheel)
+    }
+  }, [activeDrawingTool])
+
   // Sync theme class with body
   useEffect(() => {
     if (theme === 'light') {
@@ -504,10 +679,9 @@ export default function App() {
     const loadData = async () => {
       const bars = await datafeed.getHistoryKLineData(activeSymbol, activePeriod)
       if (bars && bars.length > 0) {
+        resetChartScale(chart, true)
         chart.applyNewData(bars, false, () => {
-          chart.setBarSpace(9)
-          chart.setOffsetRightDistance(60)
-          chart.scrollToRealTime()
+          resetChartScale(chart, true)
           restoreDrawingsForSymbol(activeSymbol)
         })
         const last = bars[bars.length - 1]
@@ -570,7 +744,12 @@ export default function App() {
           if (isOverlay) {
             paneId = chart.createIndicator(indName, true, { id: 'candle_pane' })
           } else {
-            paneId = chart.createIndicator(indName, false, { height: 120 })
+            const paneHeight = indName === 'VOL' ? 95 : 105
+            paneId = chart.createIndicator(indName, false, {
+              height: paneHeight,
+              dragEnabled: true,
+              minHeight: 45,
+            })
           }
           if (paneId) {
             const customParams = savedParamsMap[indName]
@@ -650,16 +829,15 @@ export default function App() {
     chartInstanceRef.current.removeOverlay()
     setSelectedOverlay(null)
 
-    // 3. Xóa dữ liệu cũ để KlineCharts tính lại thang đo giá Y-axis từ đầu cho mã mới
+    // 3. Xóa dữ liệu cũ & reset toàn bộ auto-scale để KlineCharts tính lại thang đo giá Y-axis chuẩn xác cho mã mới
     chartInstanceRef.current.clearData()
+    resetChartScale(chartInstanceRef.current, true)
 
     const bars = await datafeedRef.current.getHistoryKLineData(ticker, activePeriod)
     if (bars && bars.length > 0) {
       chartInstanceRef.current.applyNewData(bars, false, () => {
-        // Tự động căn chỉnh vừa mắt người xem: zoom chuẩn 9px, lề phải 60px như TradingView
-        chartInstanceRef.current?.setBarSpace(9)
-        chartInstanceRef.current?.setOffsetRightDistance(60)
-        chartInstanceRef.current?.scrollToRealTime()
+        // Tự động căn chỉnh thang đo giá 100% chuẩn xác, zoom chuẩn 9px, lề phải 60px như TradingView
+        resetChartScale(chartInstanceRef.current, true)
 
         // 4. Khôi phục lại toàn bộ hình vẽ đã lưu trước đó của mã mới!
         restoreDrawingsForSymbol(ticker)
@@ -705,13 +883,12 @@ export default function App() {
     chartInstanceRef.current.removeOverlay()
     setSelectedOverlay(null)
     chartInstanceRef.current.clearData()
+    resetChartScale(chartInstanceRef.current, true)
 
     const bars = await datafeedRef.current.getHistoryKLineData(activeSymbol, period)
     if (bars && bars.length > 0) {
       chartInstanceRef.current.applyNewData(bars, false, () => {
-        chartInstanceRef.current?.setBarSpace(9)
-        chartInstanceRef.current?.setOffsetRightDistance(60)
-        chartInstanceRef.current?.scrollToRealTime()
+        resetChartScale(chartInstanceRef.current, true)
 
         // Khôi phục hình vẽ trên khung thời gian mới
         restoreDrawingsForSymbol(activeSymbol)
@@ -792,9 +969,11 @@ export default function App() {
           id: 'candle_pane',
         })
       } else {
-        const paneHeight = 120
+        const paneHeight = indicatorName === 'VOL' ? 95 : 105
         paneId = chartInstanceRef.current.createIndicator(indicatorName, false, {
           height: paneHeight,
+          dragEnabled: true,
+          minHeight: 45,
         })
       }
 
@@ -851,7 +1030,12 @@ export default function App() {
       if (isOverlay) {
         newPaneId = chartInstanceRef.current.createIndicator(indicatorName, true, { id: 'candle_pane' })
       } else {
-        newPaneId = chartInstanceRef.current.createIndicator(indicatorName, false, { height: 120 })
+        const paneHeight = indicatorName === 'VOL' ? 95 : 105
+        newPaneId = chartInstanceRef.current.createIndicator(indicatorName, false, {
+          height: paneHeight,
+          dragEnabled: true,
+          minHeight: 45,
+        })
       }
 
       // Áp dụng tham số đã lưu
@@ -1126,6 +1310,18 @@ export default function App() {
 
           {/* KlineCharts Mount Element */}
           <div ref={chartElRef} className="tv-klinechart-dom" />
+
+          {/* TradingView Floating Auto-Scale (Auto-Fit) Button */}
+          <button
+            className="tv-auto-scale-btn"
+            title="Tự động căn chỉnh thang đo giá (Auto Scale) - Phím tắt: Double-click vào biểu đồ"
+            onClick={() => resetChartScale(chartInstanceRef.current, true)}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+            </svg>
+            <span>Auto</span>
+          </button>
 
           {/* Bottom Dock: Backtest Strategy Tester */}
           <BottomBacktestDock
