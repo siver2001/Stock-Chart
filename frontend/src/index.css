@@ -1008,6 +1008,23 @@ body.theme-light .tv-ind-pill {
   min-height: 0;
 }
 
+/* ==========================================================================
+   ENHANCED PANE SEPARATOR (DỄ KÉO THẢ PHÂN CHIA CHỈ BÁO CHUẨN TRADINGVIEW)
+   ========================================================================== */
+.tv-klinechart-dom div[style*="cursor: ns-resize"] {
+  height: 14px !important;
+  margin-top: -6px !important;
+  z-index: 30 !important;
+  cursor: ns-resize !important;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.tv-klinechart-dom div[style*="cursor: ns-resize"]:hover,
+.tv-klinechart-dom div[style*="cursor: ns-resize"]:active {
+  background-color: rgba(41, 98, 255, 0.75) !important;
+  box-shadow: 0 0 10px rgba(41, 98, 255, 0.6) !important;
+}
+
 /* TradingView Floating Auto-Scale (Auto-Fit) Button */
 .tv-auto-scale-btn {
   position: absolute;

@@ -475,9 +475,10 @@ export default function App() {
   }, [activeDrawingTool, cancelCurrentDrawing])
 
   // Mượt mà hóa thao tác kéo lên/kéo xuống & zoom trục giá Y như TradingView:
+  // - Kéo dọc thước đo Y: Tốc độ co giãn nhạy, đồng đều cho cả nến và tất cả chỉ báo (không bị chậm ở đáy màn hình)
   // - Kéo dọc trực tiếp trên biểu đồ: Tự động mở khóa autoCalcTickFlag để pan dọc mượt mà
   // - Cuộn chuột trên thước đo giá Y (bên phải): Zoom co giãn thang đo giá mượt mà
-  // - Double-click bất kỳ đâu trên biểu đồ hoặc thanh thước đo giá: Reset căn chỉnh tự động (Auto Scale)
+  // - Double-click trên thước đo của chỉ báo nào: Reset căn chỉnh tự động cho chỉ báo đó; trên biểu đồ: reset tất cả
   useEffect(() => {
     const el = chartElRef.current
     if (!el) return
@@ -487,8 +488,47 @@ export default function App() {
     let startY = 0
     let hasUnlockedVertical = false
 
+    // State cho việc kéo chuột co giãn trực tiếp trên thước đo Y
+    let isYAxisDragging = false
+    let yAxisDragStartY = 0
+    let yAxisDragPane = null
+    let yAxisInitialRange = null
+
     const handlePointerDown = (e) => {
       if (e.button !== 0) return
+      const chart = chartInstanceRef.current
+      if (!chart) return
+
+      const rect = el.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+      const isOverYAxis = mouseX >= rect.width - 80
+
+      if (isOverYAxis) {
+        // Người dùng bấm trực tiếp vào thước đo giá Y (của nến hoặc chỉ báo)
+        const panes = typeof chart.getAllDrawPanes === 'function' ? chart.getAllDrawPanes() : (chart._drawPanes || [])
+        let targetPane = null
+        for (const p of panes) {
+          const b = p.getBounding ? p.getBounding() : null
+          if (b && mouseY >= b.top && mouseY <= b.top + b.height) {
+            targetPane = p
+            break
+          }
+        }
+        if (!targetPane) targetPane = chart._candlePane || panes[0]
+        const axis = targetPane?.getAxisComponent?.()
+        const r = axis?.getRange?.()
+
+        if (axis && r && isFinite(r.from) && isFinite(r.to)) {
+          isYAxisDragging = true
+          yAxisDragStartY = e.clientY
+          yAxisDragPane = targetPane
+          yAxisInitialRange = { ...r }
+          e.preventDefault()
+        }
+        return
+      }
+
       isPointerDown = true
       startX = e.clientX
       startY = e.clientY
@@ -496,9 +536,39 @@ export default function App() {
     }
 
     const handlePointerMove = (e) => {
-      if (!isPointerDown) return
       const chart = chartInstanceRef.current
       if (!chart) return
+
+      // 1. Xử lý kéo co giãn trục Y mượt mà, phản hồi ngay lập tức chuẩn TradingView (Độc lập tọa độ màn hình)
+      if (isYAxisDragging && yAxisDragPane && yAxisInitialRange) {
+        e.preventDefault()
+        const axis = yAxisDragPane.getAxisComponent?.()
+        if (!axis) return
+
+        const dy = e.clientY - yAxisDragStartY
+        // Công thức co giãn hàm số mũ chuẩn TradingView: di chuyển chuột 30-50px là co giãn rõ rệt, mượt mà ở mọi vị trí
+        const factor = Math.exp(-dy * 0.007)
+        const mid = (yAxisInitialRange.from + yAxisInitialRange.to) / 2
+        const half = ((yAxisInitialRange.to - yAxisInitialRange.from) * factor) / 2
+        const newFrom = mid - half
+        const newTo = mid + half
+
+        axis.setRange({
+          from: newFrom,
+          to: newTo,
+          range: newTo - newFrom,
+          realFrom: axis.convertToRealValue(newFrom),
+          realTo: axis.convertToRealValue(newTo),
+          realRange: axis.convertToRealValue(newTo) - axis.convertToRealValue(newFrom),
+        })
+
+        if (typeof chart.adjustPaneViewport === 'function') {
+          chart.adjustPaneViewport(false, true, true, true)
+        }
+        return
+      }
+
+      if (!isPointerDown) return
 
       // Không can thiệp nếu người dùng đang dùng công cụ vẽ
       const overlayStore = chart._chartStore?.getOverlayStore?.()
@@ -532,11 +602,42 @@ export default function App() {
     const handlePointerUp = () => {
       isPointerDown = false
       hasUnlockedVertical = false
+      isYAxisDragging = false
+      yAxisDragPane = null
+      yAxisInitialRange = null
     }
 
-    // Double-click bất cứ đâu trên biểu đồ: Reset thang đo Auto-fit
-    const handleDblClick = () => {
-      resetChartScale(chartInstanceRef.current, false)
+    // Double-click: nếu double-click trên thước đo giá của chỉ báo nào thì reset riêng chỉ báo đó; còn lại reset tất cả
+    const handleDblClick = (e) => {
+      const chart = chartInstanceRef.current
+      if (!chart) return
+
+      const rect = el.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+      const chartWidth = rect.width
+      const isOverYAxis = mouseX >= chartWidth - 80
+
+      if (isOverYAxis) {
+        const panes = typeof chart.getAllDrawPanes === 'function' ? chart.getAllDrawPanes() : (chart._drawPanes || [])
+        for (const p of panes) {
+          const b = p.getBounding ? p.getBounding() : null
+          if (b && mouseY >= b.top && mouseY <= b.top + b.height) {
+            try {
+              const axis = p.getAxisComponent?.()
+              if (axis && typeof axis.setAutoCalcTickFlag === 'function') {
+                axis.setAutoCalcTickFlag(true)
+              }
+            } catch {}
+            break
+          }
+        }
+        try {
+          chart.adjustPaneViewport(false, true, true, true, true)
+        } catch {}
+      } else {
+        resetChartScale(chart, false)
+      }
     }
 
     // Cuộn chuột mượt mà trên thước đo giá Y hoặc Ctrl + Wheel
@@ -571,7 +672,7 @@ export default function App() {
         const yAxis = targetPane.getAxisComponent?.()
         if (!yAxis) return
 
-        const zoomFactor = e.deltaY > 0 ? 1.08 : 0.92
+        const zoomFactor = e.deltaY > 0 ? 1.10 : 0.90
         const range = yAxis.getRange?.()
         if (!range || !isFinite(range.from) || !isFinite(range.to)) return
 
@@ -748,7 +849,8 @@ export default function App() {
             paneId = chart.createIndicator(indName, false, {
               height: paneHeight,
               dragEnabled: true,
-              minHeight: 45,
+              minHeight: 40,
+              gap: { top: 0.12, bottom: 0.08 },
             })
           }
           if (paneId) {
@@ -973,7 +1075,8 @@ export default function App() {
         paneId = chartInstanceRef.current.createIndicator(indicatorName, false, {
           height: paneHeight,
           dragEnabled: true,
-          minHeight: 45,
+          minHeight: 40,
+          gap: { top: 0.12, bottom: 0.08 },
         })
       }
 
@@ -1034,7 +1137,8 @@ export default function App() {
         newPaneId = chartInstanceRef.current.createIndicator(indicatorName, false, {
           height: paneHeight,
           dragEnabled: true,
-          minHeight: 45,
+          minHeight: 40,
+          gap: { top: 0.12, bottom: 0.08 },
         })
       }
 
@@ -1091,8 +1195,13 @@ export default function App() {
       if (isOverlay) {
         paneId = chartInstanceRef.current.createIndicator(name, true, { id: 'candle_pane' })
       } else {
-        const h = name === 'VOL' ? 95 : 120
-        paneId = chartInstanceRef.current.createIndicator(name, false, { height: h })
+        const h = name === 'VOL' ? 95 : 105
+        paneId = chartInstanceRef.current.createIndicator(name, false, {
+          height: h,
+          dragEnabled: true,
+          minHeight: 40,
+          gap: { top: 0.12, bottom: 0.08 },
+        })
       }
       if (paneId) {
         newActive.push({ name, paneId, isOverlay })
