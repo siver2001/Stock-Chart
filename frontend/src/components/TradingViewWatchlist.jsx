@@ -11,6 +11,8 @@ import {
   ArrowUpDown,
 } from 'lucide-react'
 import { fetchQuotes } from '../api/stockApi'
+import { syncWatchlistCloud, fetchWatchlistCloud } from '../services/cloudStorage'
+import { isCloudEnabled } from '../lib/supabase'
 
 const DEFAULT_WATCHLIST = ['VNINDEX', 'VN30', 'FPT', 'HPG', 'VCB', 'SSI', 'MWG', 'TCB']
 const STORAGE_KEY = 'vn_stock_watchlist'
@@ -68,6 +70,38 @@ export default function TradingViewWatchlist({
       localStorage.setItem(FLAGS_STORAGE_KEY, JSON.stringify(symbolFlags))
     } catch {}
   }, [symbolFlags])
+
+  // Background Cloud Restore on mount
+  useEffect(() => {
+    let isMounted = true
+    if (isCloudEnabled()) {
+      fetchWatchlistCloud().then((cloudData) => {
+        if (!isMounted || !cloudData) return
+        if (Array.isArray(cloudData.symbols) && cloudData.symbols.length > 0) {
+          setSymbols(cloudData.symbols)
+        }
+        if (cloudData.flags && typeof cloudData.flags === 'object') {
+          setSymbolFlags(cloudData.flags)
+        }
+      })
+    }
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  // Debounced Cloud Sync for Watchlist
+  const watchlistCloudTimerRef = useRef(null)
+  useEffect(() => {
+    if (!isCloudEnabled()) return
+    if (watchlistCloudTimerRef.current) clearTimeout(watchlistCloudTimerRef.current)
+    watchlistCloudTimerRef.current = setTimeout(() => {
+      syncWatchlistCloud(symbols, symbolFlags)
+    }, 1500)
+    return () => {
+      if (watchlistCloudTimerRef.current) clearTimeout(watchlistCloudTimerRef.current)
+    }
+  }, [symbols, symbolFlags])
 
   // Close color picker popover on click outside
   useEffect(() => {

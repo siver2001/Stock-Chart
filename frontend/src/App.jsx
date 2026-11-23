@@ -13,6 +13,8 @@ import ActiveIndicatorsBar from './components/ActiveIndicatorsBar'
 import SelectedOverlayToolbar from './components/SelectedOverlayToolbar'
 import RealtimeMarketBar from './components/RealtimeMarketBar'
 import IndicatorSettingsModal from './components/IndicatorSettingsModal'
+import { syncDrawingsCloud, fetchDrawingsCloud, deleteDrawingsCloud } from './services/cloudStorage'
+import { isCloudEnabled } from './lib/supabase'
 
 const getThemeStyles = (theme, chartType = 'candle_solid') => {
   const isDark = theme === 'dark'
@@ -185,10 +187,12 @@ export default function App() {
 
   // Persistent drawings state
   const [drawingsCount, setDrawingsCount] = useState(0)
+  const [cloudSyncStatus, setCloudSyncStatus] = useState(() => (isCloudEnabled() ? 'synced' : 'local'))
+  const cloudDebounceTimerRef = useRef(null)
   const activeSymbolRef = useRef(activeSymbol)
   activeSymbolRef.current = activeSymbol
 
-  // Save all completed drawings for a specific symbol to localStorage
+  // Save all completed drawings for a specific symbol to localStorage & Supabase Cloud
   const saveDrawingsForSymbol = useCallback((symbol) => {
     const sym = symbol || activeSymbolRef.current
     if (!chartInstanceRef.current || !sym) return
@@ -226,12 +230,34 @@ export default function App() {
       const storageKey = `vn_drawings_${sym.toUpperCase()}`
       localStorage.setItem(storageKey, JSON.stringify(validOverlays))
       setDrawingsCount(validOverlays.length)
+
+      // Debounced Cloud Sync (1.2s after last drawing edit)
+      if (isCloudEnabled()) {
+        if (cloudDebounceTimerRef.current) {
+          clearTimeout(cloudDebounceTimerRef.current)
+        }
+        setCloudSyncStatus('saving')
+        cloudDebounceTimerRef.current = setTimeout(async () => {
+          try {
+            const res = await syncDrawingsCloud(sym, validOverlays)
+            if (res && res.success) {
+              setCloudSyncStatus('synced')
+            } else {
+              setCloudSyncStatus('local')
+            }
+          } catch {
+            setCloudSyncStatus('local')
+          }
+        }, 1200)
+      } else {
+        setCloudSyncStatus('local')
+      }
     } catch (err) {
       console.warn('Failed to save drawings:', err)
     }
   }, [])
 
-  // Restore saved drawings for a symbol from localStorage
+  // Restore saved drawings for a symbol from localStorage & Supabase Cloud
   const restoreDrawingsForSymbol = useCallback(
     (symbol) => {
       const sym = symbol || activeSymbolRef.current
@@ -239,47 +265,77 @@ export default function App() {
       try {
         const storageKey = `vn_drawings_${sym.toUpperCase()}`
         const raw = localStorage.getItem(storageKey)
-        if (!raw) {
-          setDrawingsCount(0)
-          return
-        }
-        const list = JSON.parse(raw)
-        if (!Array.isArray(list) || list.length === 0) {
-          setDrawingsCount(0)
-          return
+        let list = []
+        if (raw) {
+          try {
+            list = JSON.parse(raw)
+          } catch {}
         }
 
-        list.forEach((item) => {
-          if (!item.name || !item.points || item.points.length === 0) return
-          chartInstanceRef.current.createOverlay(
-            {
-              id: item.id,
-              name: item.name,
-              groupId: item.groupId,
-              points: item.points,
-              styles: item.styles,
-              lock: item.lock,
-              visible: item.visible,
-              mode: item.mode,
-              extendData: item.extendData,
-              onSelected: (event) => setSelectedOverlay(event.overlay),
-              onDeselected: () => setSelectedOverlay(null),
-              onRightClick: (event) => {
-                if (event?.overlay?.id) {
-                  chartInstanceRef.current.removeOverlay(event.overlay.id)
+        const renderOverlays = (overlayList) => {
+          if (!chartInstanceRef.current || !Array.isArray(overlayList)) return
+          chartInstanceRef.current.removeOverlay()
+          overlayList.forEach((item) => {
+            if (!item.name || !item.points || item.points.length === 0) return
+            chartInstanceRef.current.createOverlay(
+              {
+                id: item.id,
+                name: item.name,
+                groupId: item.groupId,
+                points: item.points,
+                styles: item.styles,
+                lock: item.lock,
+                visible: item.visible,
+                mode: item.mode,
+                extendData: item.extendData,
+                onSelected: (event) => setSelectedOverlay(event.overlay),
+                onDeselected: () => setSelectedOverlay(null),
+                onRightClick: (event) => {
+                  if (event?.overlay?.id) {
+                    chartInstanceRef.current.removeOverlay(event.overlay.id)
+                    setTimeout(() => saveDrawingsForSymbol(sym), 60)
+                  }
+                  setSelectedOverlay(null)
+                  return true
+                },
+                onPressedMoveEnd: () => {
                   setTimeout(() => saveDrawingsForSymbol(sym), 60)
+                },
+              },
+              item.paneId || 'candle_pane'
+            )
+          })
+          setDrawingsCount(overlayList.length)
+        }
+
+        // 1. Khôi phục tức thì từ localStorage (0ms độ trễ)
+        if (Array.isArray(list) && list.length > 0) {
+          renderOverlays(list)
+        } else {
+          setDrawingsCount(0)
+        }
+
+        // 2. Kiểm tra ngầm trên Supabase Cloud
+        if (isCloudEnabled()) {
+          fetchDrawingsCloud(sym)
+            .then((cloudData) => {
+              if (cloudData && Array.isArray(cloudData.overlays)) {
+                // Nếu Cloud có nét vẽ mà local chưa có hoặc số lượng khác
+                if (cloudData.overlays.length > 0 && (!list || list.length === 0)) {
+                  localStorage.setItem(storageKey, JSON.stringify(cloudData.overlays))
+                  if (activeSymbolRef.current.toUpperCase() === sym.toUpperCase()) {
+                    renderOverlays(cloudData.overlays)
+                  }
                 }
-                setSelectedOverlay(null)
-                return true
-              },
-              onPressedMoveEnd: () => {
-                setTimeout(() => saveDrawingsForSymbol(sym), 60)
-              },
-            },
-            item.paneId || 'candle_pane'
-          )
-        })
-        setDrawingsCount(list.length)
+              }
+              setCloudSyncStatus('synced')
+            })
+            .catch(() => {
+              setCloudSyncStatus('local')
+            })
+        } else {
+          setCloudSyncStatus('local')
+        }
       } catch (err) {
         console.warn('Failed to restore drawings:', err)
         setDrawingsCount(0)
@@ -819,9 +875,11 @@ export default function App() {
 
   const handleClearOverlays = () => {
     if (chartInstanceRef.current) {
+      const sym = activeSymbolRef.current.toUpperCase()
       chartInstanceRef.current.removeOverlay()
       setSelectedOverlay(null)
-      localStorage.removeItem(`vn_drawings_${activeSymbolRef.current.toUpperCase()}`)
+      localStorage.removeItem(`vn_drawings_${sym}`)
+      deleteDrawingsCloud(sym)
       setDrawingsCount(0)
     }
   }
@@ -877,6 +935,7 @@ export default function App() {
         onToggleBacktest={() => setShowBacktest((s) => !s)}
         onScreenshot={handleScreenshot}
         drawingsCount={drawingsCount}
+        cloudSyncStatus={cloudSyncStatus}
       />
 
       {/* Main Workspace */}

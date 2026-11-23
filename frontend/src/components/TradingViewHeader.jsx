@@ -92,6 +92,7 @@ export default function TradingViewHeader({
   onToggleBacktest,
   onScreenshot,
   drawingsCount = 0,
+  cloudSyncStatus = 'local',
 }) {
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false)
   const [showChartTypeDropdown, setShowChartTypeDropdown] = useState(false)
@@ -410,13 +411,35 @@ export default function TradingViewHeader({
 
       {/* Right Controls */}
       <div className="tv-header-right">
-        {/* Auto-saved Drawings Indicator */}
+        {/* Auto-saved Drawings Indicator / Cloud Sync Status */}
         <div
-          className="tv-drawings-save-status"
-          title={`Tất cả hình vẽ phân tích kỹ thuật của mã ${activeSymbol} được tự động lưu vào bộ nhớ trình duyệt`}
+          className={`tv-drawings-save-status ${cloudSyncStatus === 'saving' ? 'is-saving' : ''}`}
+          title={
+            cloudSyncStatus === 'synced'
+              ? `Đã đồng bộ hóa Cloud an toàn (Supabase) - ${drawingsCount} nét vẽ của mã ${activeSymbol}`
+              : cloudSyncStatus === 'saving'
+              ? 'Đang đồng bộ nét vẽ lên Supabase Cloud...'
+              : `Đã lưu cục bộ trình duyệt (${drawingsCount} nét vẽ) - Thêm SUPABASE_URL & ANON_KEY trong .env để bật Cloud Sync`
+          }
         >
-          <Cloud size={14} color="#089981" />
-          <span>{drawingsCount > 0 ? `Đã lưu (${drawingsCount})` : 'Tự động lưu'}</span>
+          {cloudSyncStatus === 'synced' ? (
+            <Cloud size={14} color="#089981" />
+          ) : cloudSyncStatus === 'saving' ? (
+            <Cloud size={14} color="#2962ff" className="tv-cloud-pulse" />
+          ) : (
+            <Cloud size={14} color="#787b86" />
+          )}
+          <span>
+            {cloudSyncStatus === 'synced'
+              ? drawingsCount > 0
+                ? `Cloud ✓ (${drawingsCount})`
+                : 'Cloud Sync ✓'
+              : cloudSyncStatus === 'saving'
+              ? 'Đang lưu Cloud...'
+              : drawingsCount > 0
+              ? `Đã lưu (${drawingsCount})`
+              : 'Lưu cục bộ'}
+          </span>
         </div>
 
         <div className="tv-divider" />

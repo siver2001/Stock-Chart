@@ -2323,10 +2323,27 @@ body.theme-light .tv-rt-clock-time {
   user-select: none;
   transition: all 0.2s ease;
 }
+.tv-drawings-save-status.is-saving {
+  color: #2962ff;
+  background-color: rgba(41, 98, 255, 0.12);
+  border-color: rgba(41, 98, 255, 0.35);
+}
+@keyframes tvCloudPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(1.18); }
+}
+.tv-cloud-pulse {
+  animation: tvCloudPulse 0.9s infinite ease-in-out;
+}
 body.theme-light .tv-drawings-save-status {
   background-color: #e8f8f4;
   color: #089981;
   border-color: #a3e7d8;
+}
+body.theme-light .tv-drawings-save-status.is-saving {
+  background-color: #e8f0fe;
+  color: #2962ff;
+  border-color: #aecbfa;
 }
 
 .tv-rt-source {
