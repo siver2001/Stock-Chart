@@ -13,8 +13,20 @@ import ActiveIndicatorsBar from './components/ActiveIndicatorsBar'
 import SelectedOverlayToolbar from './components/SelectedOverlayToolbar'
 import RealtimeMarketBar from './components/RealtimeMarketBar'
 import IndicatorSettingsModal from './components/IndicatorSettingsModal'
+import { volumeOverlayConfig } from './indicators/volumeOverlay'
 import { syncDrawingsCloud, fetchDrawingsCloud, deleteDrawingsCloud } from './services/cloudStorage'
 import { isCloudEnabled } from './lib/supabase'
+
+export const STORAGE_KEYS = {
+  THEME: 'vn_theme',
+  LAST_SYMBOL: 'vn_last_symbol',
+  LAST_PERIOD: 'vn_last_period',
+  CHART_TYPE: 'vn_chart_type',
+  SHOW_WATCHLIST: 'vn_show_watchlist',
+  ACTIVE_INDICATORS: 'vn_active_indicators',
+  HIDDEN_INDICATORS: 'vn_hidden_indicators',
+  INDICATOR_PARAMS: 'vn_indicator_calc_params',
+}
 
 const getThemeStyles = (theme, chartType = 'candle_solid') => {
   const isDark = theme === 'dark'
@@ -157,17 +169,26 @@ export default function App() {
   const chartInstanceRef = useRef(null)
   const datafeedRef = useRef(null)
 
-  const [theme, setTheme] = useState(() => localStorage.getItem('vn_theme') || 'dark')
-  const [activeSymbol, setActiveSymbol] = useState(() => localStorage.getItem('vn_last_symbol') || 'VNINDEX')
-  const [activePeriod, setActivePeriod] = useState({ multiplier: 1, timespan: 'day', text: '1D' })
+  const [theme, setTheme] = useState(() => localStorage.getItem(STORAGE_KEYS.THEME) || 'dark')
+  const [activeSymbol, setActiveSymbol] = useState(() => localStorage.getItem(STORAGE_KEYS.LAST_SYMBOL) || 'VNINDEX')
+  const [activePeriod, setActivePeriod] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.LAST_PERIOD)
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return { multiplier: 1, timespan: 'day', text: '1D' }
+  })
   const activePeriodRef = useRef(activePeriod)
   activePeriodRef.current = activePeriod
-  const [chartType, setChartType] = useState('candle_solid')
+  const [chartType, setChartType] = useState(() => localStorage.getItem(STORAGE_KEYS.CHART_TYPE) || 'candle_solid')
 
   // Modals & Drawers state
   const [isSymbolModalOpen, setIsSymbolModalOpen] = useState(false)
   const [isIndicatorsModalOpen, setIsIndicatorsModalOpen] = useState(false)
-  const [showWatchlist, setShowWatchlist] = useState(true)
+  const [showWatchlist, setShowWatchlist] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SHOW_WATCHLIST)
+    return saved !== null ? saved === 'true' : true
+  })
   const [showBacktest, setShowBacktest] = useState(false)
   const [settingsIndicator, setSettingsIndicator] = useState(null)
   const [, setSettingsUpdateTick] = useState(0)
@@ -502,13 +523,73 @@ export default function App() {
         })
       }
 
-      // Add default indicators: MA and VOL overlayed directly on the main candlestick chart like TradingView!
-      const maPaneId = chart.createIndicator('MA', true, { id: 'candle_pane' })
-      const volPaneId = chart.createIndicator('VOL', true, { id: 'candle_pane' })
-      const initInds = []
-      if (maPaneId) initInds.push({ name: 'MA', paneId: maPaneId, isOverlay: true })
-      if (volPaneId) initInds.push({ name: 'VOL', paneId: volPaneId, isOverlay: true })
-      setActiveIndicators(initInds)
+      // Restore saved indicators from localStorage (only what user kept active!)
+      let savedInds = null
+      try {
+        const raw = localStorage.getItem(STORAGE_KEYS.ACTIVE_INDICATORS)
+        if (raw !== null) {
+          savedInds = JSON.parse(raw)
+        }
+      } catch {}
+
+      // Default for brand new visitors: MA and VOL
+      if (!Array.isArray(savedInds)) {
+        savedInds = [
+          { name: 'MA', isOverlay: true },
+          { name: 'VOL', isOverlay: true },
+        ]
+      }
+
+      let savedHidden = []
+      try {
+        const rawH = localStorage.getItem(STORAGE_KEYS.HIDDEN_INDICATORS)
+        if (rawH) savedHidden = JSON.parse(rawH) || []
+      } catch {}
+
+      let savedParamsMap = {}
+      try {
+        const rawP = localStorage.getItem(STORAGE_KEYS.INDICATOR_PARAMS)
+        if (rawP) savedParamsMap = JSON.parse(rawP) || {}
+      } catch {}
+
+      if (savedParamsMap['VOL']?.maxHeightRatio) {
+        volumeOverlayConfig.maxHeightRatio = savedParamsMap['VOL'].maxHeightRatio
+        volumeOverlayConfig.opacity = savedParamsMap['VOL'].opacity
+      }
+
+      const createdActive = []
+      for (const item of savedInds) {
+        if (!item || !item.name) continue
+        const indName = item.name
+        const meta = AVAILABLE_INDICATORS.find((i) => i.name === indName)
+        const isOverlay = meta ? meta.isOverlay : (item.isOverlay ?? true)
+        const isHidden = savedHidden.includes(indName)
+
+        if (!isHidden) {
+          let paneId = null
+          if (isOverlay) {
+            paneId = chart.createIndicator(indName, true, { id: 'candle_pane' })
+          } else {
+            paneId = chart.createIndicator(indName, false, { height: 120 })
+          }
+          if (paneId) {
+            const customParams = savedParamsMap[indName]
+            if (customParams && Array.isArray(customParams)) {
+              try {
+                chart.overrideIndicator({ name: indName, calcParams: customParams }, paneId)
+              } catch (e) {
+                console.warn(`Failed to override params for ${indName}:`, e)
+              }
+            }
+            createdActive.push({ name: indName, paneId, isOverlay })
+          }
+        } else {
+          createdActive.push({ name: indName, paneId: null, isOverlay })
+        }
+      }
+
+      setActiveIndicators(createdActive)
+      setHiddenIndicators(savedHidden)
 
       // Subscribe for live polling
       datafeed.subscribe(activeSymbol, activePeriod, (bar) => {
@@ -614,6 +695,7 @@ export default function App() {
   // Switch Period
   const handlePeriodChange = useCallback(async (period) => {
     setActivePeriod(period)
+    localStorage.setItem(STORAGE_KEYS.LAST_PERIOD, JSON.stringify(period))
     if (!chartInstanceRef.current || !datafeedRef.current) return
 
     // Lưu lại hình vẽ hiện tại
@@ -665,8 +747,22 @@ export default function App() {
   // Switch Chart Type (Candles, Hollow, Bars OHLC, Area)
   const handleChartTypeChange = (type) => {
     setChartType(type)
+    localStorage.setItem(STORAGE_KEYS.CHART_TYPE, type)
     if (chartInstanceRef.current) {
       chartInstanceRef.current.setStyles(getThemeStyles(theme, type))
+    }
+  }
+
+  // Persist Active & Hidden Indicators to localStorage (cái gì đang bật thì lưu, cái gì tắt rồi thì không lưu)
+  const persistActiveIndicators = (indicators, hidden) => {
+    try {
+      const toSave = indicators.map((i) => ({ name: i.name, isOverlay: i.isOverlay }))
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_INDICATORS, JSON.stringify(toSave))
+      if (hidden !== undefined) {
+        localStorage.setItem(STORAGE_KEYS.HIDDEN_INDICATORS, JSON.stringify(hidden))
+      }
+    } catch (e) {
+      console.warn('Failed to persist active indicators:', e)
     }
   }
 
@@ -676,14 +772,17 @@ export default function App() {
 
     const existing = activeIndicators.find((i) => i.name === indicatorName)
     if (existing) {
-      // Remove indicator
-      if (!hiddenIndicators.includes(indicatorName)) {
+      // Remove indicator (TURN OFF - Cái gì tắt rồi thì không lưu!)
+      if (!hiddenIndicators.includes(indicatorName) && existing.paneId) {
         chartInstanceRef.current.removeIndicator(existing.paneId, existing.name)
       }
-      setActiveIndicators((prev) => prev.filter((i) => i.name !== indicatorName))
-      setHiddenIndicators((prev) => prev.filter((name) => name !== indicatorName))
+      const nextActive = activeIndicators.filter((i) => i.name !== indicatorName)
+      const nextHidden = hiddenIndicators.filter((name) => name !== indicatorName)
+      setActiveIndicators(nextActive)
+      setHiddenIndicators(nextHidden)
+      persistActiveIndicators(nextActive, nextHidden)
     } else {
-      // Add indicator
+      // Add indicator (TURN ON - Thêm chỉ báo thì lưu lại!)
       const meta = AVAILABLE_INDICATORS.find((i) => i.name === indicatorName)
       const isOverlay = meta ? meta.isOverlay : false
       let paneId = null
@@ -700,7 +799,23 @@ export default function App() {
       }
 
       if (paneId) {
-        setActiveIndicators((prev) => [...prev, { name: indicatorName, paneId, isOverlay }])
+        // Áp dụng tham số tùy chỉnh đã lưu nếu có
+        try {
+          const rawP = localStorage.getItem(STORAGE_KEYS.INDICATOR_PARAMS)
+          if (rawP) {
+            const pMap = JSON.parse(rawP)
+            if (pMap && pMap[indicatorName] && Array.isArray(pMap[indicatorName])) {
+              chartInstanceRef.current.overrideIndicator(
+                { name: indicatorName, calcParams: pMap[indicatorName] },
+                paneId
+              )
+            }
+          }
+        } catch {}
+
+        const nextActive = [...activeIndicators, { name: indicatorName, paneId, isOverlay }]
+        setActiveIndicators(nextActive)
+        persistActiveIndicators(nextActive)
       }
     }
   }
@@ -710,11 +825,14 @@ export default function App() {
     if (!chartInstanceRef.current) return
     const existing = activeIndicators.find((i) => i.name === indicatorName)
     if (existing) {
-      if (!hiddenIndicators.includes(indicatorName)) {
+      if (!hiddenIndicators.includes(indicatorName) && existing.paneId) {
         chartInstanceRef.current.removeIndicator(existing.paneId, existing.name)
       }
-      setActiveIndicators((prev) => prev.filter((i) => i.name !== indicatorName))
-      setHiddenIndicators((prev) => prev.filter((name) => name !== indicatorName))
+      const nextActive = activeIndicators.filter((i) => i.name !== indicatorName)
+      const nextHidden = hiddenIndicators.filter((name) => name !== indicatorName)
+      setActiveIndicators(nextActive)
+      setHiddenIndicators(nextHidden)
+      persistActiveIndicators(nextActive, nextHidden)
     }
   }
 
@@ -735,14 +853,36 @@ export default function App() {
       } else {
         newPaneId = chartInstanceRef.current.createIndicator(indicatorName, false, { height: 120 })
       }
-      setActiveIndicators((prev) =>
-        prev.map((ind) => (ind.name === indicatorName ? { ...ind, paneId: newPaneId || ind.paneId } : ind))
+
+      // Áp dụng tham số đã lưu
+      try {
+        const rawP = localStorage.getItem(STORAGE_KEYS.INDICATOR_PARAMS)
+        if (rawP && newPaneId) {
+          const pMap = JSON.parse(rawP)
+          if (pMap && pMap[indicatorName] && Array.isArray(pMap[indicatorName])) {
+            chartInstanceRef.current.overrideIndicator(
+              { name: indicatorName, calcParams: pMap[indicatorName] },
+              newPaneId
+            )
+          }
+        }
+      } catch {}
+
+      const nextActive = activeIndicators.map((ind) =>
+        ind.name === indicatorName ? { ...ind, paneId: newPaneId || ind.paneId } : ind
       )
-      setHiddenIndicators((prev) => prev.filter((n) => n !== indicatorName))
+      const nextHidden = hiddenIndicators.filter((n) => n !== indicatorName)
+      setActiveIndicators(nextActive)
+      setHiddenIndicators(nextHidden)
+      persistActiveIndicators(nextActive, nextHidden)
     } else {
       // Hide in KlineCharts, but KEEP pill in activeIndicators with isHidden flag!
-      chartInstanceRef.current.removeIndicator(existing.paneId, existing.name)
-      setHiddenIndicators((prev) => [...prev, indicatorName])
+      if (existing.paneId) {
+        chartInstanceRef.current.removeIndicator(existing.paneId, existing.name)
+      }
+      const nextHidden = [...hiddenIndicators, indicatorName]
+      setHiddenIndicators(nextHidden)
+      persistActiveIndicators(activeIndicators, nextHidden)
     }
   }
 
@@ -751,7 +891,9 @@ export default function App() {
     if (!chartInstanceRef.current) return
     // Remove all current
     activeIndicators.forEach((i) => {
-      chartInstanceRef.current.removeIndicator(i.paneId, i.name)
+      if (i.paneId) {
+        chartInstanceRef.current.removeIndicator(i.paneId, i.name)
+      }
     })
     setActiveIndicators([])
     setHiddenIndicators([])
@@ -773,6 +915,7 @@ export default function App() {
       }
     })
     setActiveIndicators(newActive)
+    persistActiveIndicators(newActive, [])
   }
 
   // Drawing Tools
@@ -930,7 +1073,13 @@ export default function App() {
         activeIndicatorsCount={activeIndicators.length}
         onApplyPreset={handleApplyPreset}
         showWatchlist={showWatchlist}
-        onToggleWatchlist={() => setShowWatchlist((s) => !s)}
+        onToggleWatchlist={() => {
+          setShowWatchlist((s) => {
+            const next = !s
+            localStorage.setItem(STORAGE_KEYS.SHOW_WATCHLIST, String(next))
+            return next
+          })
+        }}
         showBacktest={showBacktest}
         onToggleBacktest={() => setShowBacktest((s) => !s)}
         onScreenshot={handleScreenshot}
@@ -991,7 +1140,10 @@ export default function App() {
           <TradingViewWatchlist
             activeSymbol={activeSymbol}
             onSelectSymbol={handleSelectSymbol}
-            onClose={() => setShowWatchlist(false)}
+            onClose={() => {
+              setShowWatchlist(false)
+              localStorage.setItem(STORAGE_KEYS.SHOW_WATCHLIST, 'false')
+            }}
             latestBar={latestBar}
           />
         )}

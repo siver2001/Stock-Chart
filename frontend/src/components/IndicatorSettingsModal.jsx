@@ -28,6 +28,15 @@ export default function IndicatorSettingsModal({
     if (currentIndInstance?.calcParams && currentIndInstance.calcParams.length > 0) {
       return [...currentIndInstance.calcParams]
     }
+    try {
+      const raw = localStorage.getItem('vn_indicator_calc_params')
+      if (raw) {
+        const pMap = JSON.parse(raw)
+        if (pMap && pMap[indName] && Array.isArray(pMap[indName])) {
+          return [...pMap[indName]]
+        }
+      }
+    } catch {}
     if (indName === 'MA') return [10, 20, 50, 100]
     if (indName === 'EMA') return [12, 26, 50]
     if (indName === 'BOLL') return [20, 2]
@@ -82,6 +91,15 @@ export default function IndicatorSettingsModal({
   }
 
   const handleResetDefault = () => {
+    try {
+      const raw = localStorage.getItem('vn_indicator_calc_params')
+      if (raw) {
+        const pMap = JSON.parse(raw)
+        delete pMap[indName]
+        localStorage.setItem('vn_indicator_calc_params', JSON.stringify(pMap))
+      }
+    } catch {}
+
     if (indName === 'MA') {
       setCalcParams([10, 20, 50, 100])
     } else if (indName === 'EMA') {
@@ -110,13 +128,31 @@ export default function IndicatorSettingsModal({
 
   const handleApply = () => {
     if (indName === 'VOL') {
-      volumeOverlayConfig.maxHeightRatio = volHeightRatio / 100
-      volumeOverlayConfig.opacity = volOpacity / 100
+      const cfg = {
+        maxHeightRatio: volHeightRatio / 100,
+        opacity: volOpacity / 100,
+      }
+      volumeOverlayConfig.maxHeightRatio = cfg.maxHeightRatio
+      volumeOverlayConfig.opacity = cfg.opacity
+      try {
+        const raw = localStorage.getItem('vn_indicator_calc_params')
+        const pMap = raw ? JSON.parse(raw) : {}
+        pMap['VOL'] = cfg
+        localStorage.setItem('vn_indicator_calc_params', JSON.stringify(pMap))
+      } catch {}
+
       if (chartInstance?._chartStore) {
         chartInstance.applyNewData(chartInstance._chartStore.getDataList())
       }
     } else {
       const validParams = calcParams.map((p) => Math.max(1, Math.round(Number(p))))
+      try {
+        const raw = localStorage.getItem('vn_indicator_calc_params')
+        const pMap = raw ? JSON.parse(raw) : {}
+        pMap[indName] = validParams
+        localStorage.setItem('vn_indicator_calc_params', JSON.stringify(pMap))
+      } catch {}
+
       if (chartInstance) {
         chartInstance.overrideIndicator(
           {
