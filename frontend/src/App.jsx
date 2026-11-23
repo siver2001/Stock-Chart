@@ -4,7 +4,8 @@ import { registerAllCustomIndicators } from './indicators'
 import { VNStockDatafeed } from './datafeed/vnDatafeed'
 
 import TradingViewHeader from './components/TradingViewHeader'
-import DrawingToolbar from './components/DrawingToolbar'
+import DrawingToolbar, { ALL_DRAWING_TOOLS_MAP } from './components/DrawingToolbar'
+import FloatingFavoriteToolbar from './components/FloatingFavoriteToolbar'
 import SymbolSearchModal from './components/SymbolSearchModal'
 import IndicatorsModal, { AVAILABLE_INDICATORS } from './components/IndicatorsModal'
 import TradingViewWatchlist from './components/TradingViewWatchlist'
@@ -260,6 +261,77 @@ export default function App() {
   selectedOverlayRef.current = selectedOverlay
 
   const inProgressOverlayIdRef = useRef(null)
+
+  // Starred / Favorite Drawing Tools (Persistent in localStorage)
+  const [favorites, setFavorites] = useState(() => {
+    try {
+      const saved = localStorage.getItem('vn_favorite_drawing_tools')
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return [
+      'segment',
+      'fibonacciLine',
+      'fibExtension',
+      'fibTimeZone',
+      'elliottImpulse',
+      'longPosition',
+      'priceRange',
+      'datePriceRange',
+      'callout',
+    ]
+  })
+
+  const [showFavoriteToolbar, setShowFavoriteToolbar] = useState(() => {
+    const saved = localStorage.getItem('vn_show_favorite_toolbar')
+    return saved !== null ? saved === 'true' : true
+  })
+
+  // Auxiliary Drawing Modes: Continuous Drawing, Magnet Mode, Lock All, Hide All
+  const [isContinuousDrawing, setIsContinuousDrawing] = useState(false)
+  const isContinuousDrawingRef = useRef(false)
+  isContinuousDrawingRef.current = isContinuousDrawing
+
+  const [magnetMode, setMagnetMode] = useState(() => {
+    return localStorage.getItem('vn_magnet_mode') || 'off'
+  })
+
+  const [isDrawingsLocked, setIsDrawingsLocked] = useState(false)
+  const [isDrawingsHidden, setIsDrawingsHidden] = useState(false)
+
+  // Handlers for Favorites & Auxiliary Modes
+  const handleToggleFavorite = useCallback((toolId) => {
+    setFavorites((prev) => {
+      const next = prev.includes(toolId) ? prev.filter((id) => id !== toolId) : [...prev, toolId]
+      try {
+        localStorage.setItem('vn_favorite_drawing_tools', JSON.stringify(next))
+      } catch {}
+      return next
+    })
+  }, [])
+
+  const handleToggleFavoriteToolbar = useCallback(() => {
+    setShowFavoriteToolbar((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('vn_show_favorite_toolbar', String(next))
+      } catch {}
+      return next
+    })
+  }, [])
+
+  const handleToggleContinuousDrawing = useCallback(() => {
+    setIsContinuousDrawing((prev) => !prev)
+  }, [])
+
+  const handleToggleMagnetMode = useCallback(() => {
+    setMagnetMode((prev) => {
+      const next = prev === 'off' ? 'weak' : prev === 'weak' ? 'strong' : 'off'
+      try {
+        localStorage.setItem('vn_magnet_mode', next)
+      } catch {}
+      return next
+    })
+  }, [])
 
   // Persistent drawings state
   const [drawingsCount, setDrawingsCount] = useState(0)
@@ -1340,6 +1412,44 @@ export default function App() {
     persistActiveIndicators(newActive, [])
   }
 
+  const handleToggleLockDrawings = useCallback(() => {
+    setIsDrawingsLocked((prev) => {
+      const next = !prev
+      if (chartInstanceRef.current) {
+        try {
+          const overlayStore = chartInstanceRef.current._chartStore?.getOverlayStore?.()
+          const instances = overlayStore?.getInstances() || []
+          instances.forEach((inst) => {
+            chartInstanceRef.current.overrideOverlay({ id: inst.id, lock: next })
+          })
+          setTimeout(() => saveDrawingsForSymbol(activeSymbolRef.current), 60)
+        } catch (e) {
+          console.warn('Error toggling lock on overlays:', e)
+        }
+      }
+      return next
+    })
+  }, [saveDrawingsForSymbol])
+
+  const handleToggleHideDrawings = useCallback(() => {
+    setIsDrawingsHidden((prev) => {
+      const next = !prev
+      if (chartInstanceRef.current) {
+        try {
+          const overlayStore = chartInstanceRef.current._chartStore?.getOverlayStore?.()
+          const instances = overlayStore?.getInstances() || []
+          instances.forEach((inst) => {
+            chartInstanceRef.current.overrideOverlay({ id: inst.id, visible: !next })
+          })
+          setTimeout(() => saveDrawingsForSymbol(activeSymbolRef.current), 60)
+        } catch (e) {
+          console.warn('Error toggling visibility on overlays:', e)
+        }
+      }
+      return next
+    })
+  }, [saveDrawingsForSymbol])
+
   // Drawing Tools
   const handleSelectOverlay = (overlayName) => {
     if (!chartInstanceRef.current) return
@@ -1347,8 +1457,19 @@ export default function App() {
       // Hủy công cụ vẽ trước đó nếu có
       cancelCurrentDrawing()
 
+      const klineMode =
+        magnetMode === 'strong'
+          ? 'strong_magnet'
+          : magnetMode === 'weak'
+          ? 'weak_magnet'
+          : 'normal'
+
       const createdId = chartInstanceRef.current.createOverlay({
         name: overlayName,
+        mode: klineMode,
+        modeSensitivity: 10,
+        lock: isDrawingsLocked,
+        visible: !isDrawingsHidden,
         onDrawStart: (event) => {
           if (event?.overlay?.id) {
             inProgressOverlayIdRef.current = event.overlay.id
@@ -1361,7 +1482,14 @@ export default function App() {
         },
         onDrawEnd: (event) => {
           inProgressOverlayIdRef.current = null
-          setActiveDrawingTool('crosshair')
+          if (isContinuousDrawingRef.current) {
+            // Khóa chế độ vẽ: tiếp tục giữ công cụ vẽ sẵn sàng cho nét tiếp theo
+            setTimeout(() => {
+              handleSelectOverlay(overlayName)
+            }, 60)
+          } else {
+            setActiveDrawingTool('crosshair')
+          }
           if (event && event.overlay) {
             setSelectedOverlay(event.overlay)
           }
@@ -1517,10 +1645,34 @@ export default function App() {
           onSelectTool={setActiveDrawingTool}
           onSelectOverlay={handleSelectOverlay}
           onClearOverlays={handleClearOverlays}
+          favorites={favorites}
+          onToggleFavorite={handleToggleFavorite}
+          showFavoriteToolbar={showFavoriteToolbar}
+          onToggleFavoriteToolbar={handleToggleFavoriteToolbar}
+          magnetMode={magnetMode}
+          onToggleMagnetMode={handleToggleMagnetMode}
+          isContinuousDrawing={isContinuousDrawing}
+          onToggleContinuousDrawing={handleToggleContinuousDrawing}
+          isDrawingsLocked={isDrawingsLocked}
+          onToggleLockDrawings={handleToggleLockDrawings}
+          isDrawingsHidden={isDrawingsHidden}
+          onToggleHideDrawings={handleToggleHideDrawings}
         />
 
         {/* Center: Chart Workspace */}
         <div className="tv-chart-viewport">
+          {/* Floating Starred Favorites Toolbar */}
+          <FloatingFavoriteToolbar
+            activeTool={activeDrawingTool}
+            onSelectTool={setActiveDrawingTool}
+            onSelectOverlay={handleSelectOverlay}
+            favorites={favorites}
+            onToggleFavorite={handleToggleFavorite}
+            isOpen={showFavoriteToolbar}
+            onClose={() => setShowFavoriteToolbar(false)}
+            allToolsMap={ALL_DRAWING_TOOLS_MAP}
+          />
+
           {/* Top Realtime Market & Live Ticking Clock Bar */}
           <RealtimeMarketBar
             activeSymbol={activeSymbol}

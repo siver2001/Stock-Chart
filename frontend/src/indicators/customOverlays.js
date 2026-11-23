@@ -1617,5 +1617,731 @@ export function registerCustomOverlays() {
     },
   })
 
+  // 33. Date Range (Phạm vi ngày & số nến)
+  registerOverlay({
+    name: 'dateRange',
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates, bounding, overlay }) => {
+      if (coordinates.length > 1) {
+        const p1 = overlay.points?.[0]
+        const p2 = overlay.points?.[1]
+        let barsCount = 0
+        let daysCount = 0
+        if (p1 && p2) {
+          if (p1.dataIndex != null && p2.dataIndex != null) {
+            barsCount = Math.abs(p2.dataIndex - p1.dataIndex)
+          }
+          if (p1.timestamp && p2.timestamp) {
+            daysCount = Math.max(1, Math.round(Math.abs(p2.timestamp - p1.timestamp) / (1000 * 86400)))
+          }
+        }
+        const leftX = Math.min(coordinates[0].x, coordinates[1].x)
+        const rightX = Math.max(coordinates[0].x, coordinates[1].x)
+        const midX = (leftX + rightX) / 2
+        const midY = (bounding?.height || 300) / 2
+        const text = `${barsCount} thanh (${daysCount} ngày)`
+
+        return [
+          {
+            type: 'polygon',
+            attrs: {
+              coordinates: [
+                { x: leftX, y: 0 },
+                { x: rightX, y: 0 },
+                { x: rightX, y: bounding?.height || 600 },
+                { x: leftX, y: bounding?.height || 600 },
+              ],
+            },
+            styles: {
+              style: 'stroke_fill',
+              color: 'rgba(41, 98, 255, 0.12)',
+              borderColor: '#2962ff',
+              borderSize: 1.5,
+              borderStyle: 'dashed',
+            },
+          },
+          {
+            type: 'text',
+            attrs: { x: midX, y: midY, text, align: 'center', baseline: 'middle' },
+            styles: {
+              color: '#ffffff',
+              backgroundColor: '#2962ff',
+              paddingLeft: 8,
+              paddingRight: 8,
+              paddingTop: 4,
+              paddingBottom: 4,
+              borderRadius: 4,
+              size: 11,
+              weight: 'bold',
+            },
+          },
+        ]
+      }
+      return []
+    },
+  })
+
+  // 34. Date and Price Range (Phạm vi ngày và giá kết hợp chuẩn TradingView)
+  registerOverlay({
+    name: 'datePriceRange',
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates, overlay }) => {
+      if (coordinates.length > 1) {
+        const p1 = overlay.points?.[0]
+        const p2 = overlay.points?.[1]
+        let diffPct = 0
+        let diffVal = 0
+        let barsCount = 0
+        let daysCount = 0
+        if (p1 && p2 && p1.value) {
+          diffVal = p2.value - p1.value
+          diffPct = (diffVal / p1.value) * 100
+          if (p1.dataIndex != null && p2.dataIndex != null) {
+            barsCount = Math.abs(p2.dataIndex - p1.dataIndex)
+          }
+          if (p1.timestamp && p2.timestamp) {
+            daysCount = Math.max(1, Math.round(Math.abs(p2.timestamp - p1.timestamp) / (1000 * 86400)))
+          }
+        }
+        const isUp = diffVal >= 0
+        const color = isUp ? '#089981' : '#f23645'
+        const sign = isUp ? '+' : ''
+        const priceText = `${sign}${formatNum(diffVal)} (${sign}${diffPct.toFixed(2)}%)`
+        const dateText = `${barsCount} thanh (${daysCount} ngày)`
+        const fullText = `${priceText} • ${dateText}`
+
+        const minX = Math.min(coordinates[0].x, coordinates[1].x)
+        const maxX = Math.max(coordinates[0].x, coordinates[1].x)
+        const minY = Math.min(coordinates[0].y, coordinates[1].y)
+        const maxY = Math.max(coordinates[0].y, coordinates[1].y)
+        const midX = (minX + maxX) / 2
+        const midY = (minY + maxY) / 2
+
+        return [
+          {
+            type: 'polygon',
+            attrs: {
+              coordinates: [
+                { x: minX, y: minY },
+                { x: maxX, y: minY },
+                { x: maxX, y: maxY },
+                { x: minX, y: maxY },
+              ],
+            },
+            styles: {
+              style: 'stroke_fill',
+              color: isUp ? 'rgba(8, 153, 129, 0.18)' : 'rgba(242, 54, 69, 0.18)',
+              borderColor: color,
+              borderSize: 1.5,
+            },
+          },
+          {
+            type: 'line',
+            attrs: { coordinates: [coordinates[0], coordinates[1]] },
+            styles: { color, size: 1.5, style: 'dashed', dashedValue: [4, 4] },
+          },
+          {
+            type: 'text',
+            attrs: { x: midX, y: midY, text: fullText, align: 'center', baseline: 'middle' },
+            styles: {
+              color: '#ffffff',
+              backgroundColor: color,
+              paddingLeft: 8,
+              paddingRight: 8,
+              paddingTop: 4,
+              paddingBottom: 4,
+              borderRadius: 4,
+              size: 11,
+              weight: 'bold',
+            },
+          },
+        ]
+      }
+      return []
+    },
+  })
+
+  // 35. Anchored VWAP
+  registerOverlay({
+    name: 'anchoredVWAP',
+    totalStep: 2,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates, bounding }) => {
+      if (coordinates.length > 0) {
+        const pt = coordinates[0]
+        const rightX = bounding?.width || 1200
+        return [
+          {
+            type: 'circle',
+            attrs: { ...pt, r: 5 },
+            styles: { style: 'stroke_fill', color: '#f59e0b', borderColor: '#ffffff', borderSize: 1.5 },
+          },
+          {
+            type: 'line',
+            attrs: { coordinates: [pt, { x: rightX, y: pt.y }] },
+            styles: { color: '#f59e0b', size: 2 },
+          },
+          {
+            type: 'text',
+            attrs: { x: pt.x + 8, y: pt.y - 12, text: 'Anchored VWAP', align: 'left', baseline: 'middle' },
+            styles: { color: '#f59e0b', size: 10, weight: 'bold' },
+          },
+        ]
+      }
+      return []
+    },
+  })
+
+  // 36. XABCD Harmonics Pattern (Mô hình Harmonics 5 điểm)
+  registerOverlay({
+    name: 'xabcdPattern',
+    totalStep: 6,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 4) {
+        const [x, a, b, c, d] = coordinates
+        const labels = ['X', 'A', 'B', 'C', 'D']
+        const figures = []
+
+        figures.push({
+          type: 'polygon',
+          attrs: { coordinates: [x, a, b] },
+          styles: { style: 'stroke_fill', color: 'rgba(168, 85, 247, 0.18)', borderColor: '#a855f7', borderSize: 1.5 },
+        })
+        figures.push({
+          type: 'polygon',
+          attrs: { coordinates: [b, c, d] },
+          styles: { style: 'stroke_fill', color: 'rgba(168, 85, 247, 0.18)', borderColor: '#a855f7', borderSize: 1.5 },
+        })
+        figures.push({
+          type: 'line',
+          attrs: { coordinates: [x, b] },
+          styles: { color: '#787b86', size: 1, style: 'dashed', dashedValue: [3, 3] },
+        })
+        figures.push({
+          type: 'line',
+          attrs: { coordinates: [a, c] },
+          styles: { color: '#787b86', size: 1, style: 'dashed', dashedValue: [3, 3] },
+        })
+        figures.push({
+          type: 'line',
+          attrs: { coordinates: [x, d] },
+          styles: { color: '#787b86', size: 1, style: 'dashed', dashedValue: [3, 3] },
+        })
+
+        const dyXA = Math.abs(a.y - x.y) || 1
+        const dyAB = Math.abs(b.y - a.y) || 1
+        const dyBC = Math.abs(c.y - b.y) || 1
+        const dyCD = Math.abs(d.y - c.y) || 1
+
+        const ratioB = (dyAB / dyXA).toFixed(3)
+        const ratioC = (dyBC / dyAB).toFixed(3)
+        const ratioD = (dyCD / dyBC).toFixed(3)
+
+        const midXB = { x: (x.x + b.x) / 2, y: (x.y + b.y) / 2 }
+        const midAC = { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }
+        const midBD = { x: (b.x + d.x) / 2, y: (b.y + d.y) / 2 }
+
+        figures.push({
+          type: 'text',
+          attrs: { x: midXB.x, y: midXB.y - 8, text: ratioB, align: 'center', baseline: 'middle' },
+          styles: { color: '#e3b341', size: 10, weight: 'bold' },
+        })
+        figures.push({
+          type: 'text',
+          attrs: { x: midAC.x, y: midAC.y - 8, text: ratioC, align: 'center', baseline: 'middle' },
+          styles: { color: '#e3b341', size: 10, weight: 'bold' },
+        })
+        figures.push({
+          type: 'text',
+          attrs: { x: midBD.x, y: midBD.y - 8, text: ratioD, align: 'center', baseline: 'middle' },
+          styles: { color: '#e3b341', size: 10, weight: 'bold' },
+        })
+
+        ;[x, a, b, c, d].forEach((pt, idx) => {
+          figures.push({
+            type: 'circle',
+            attrs: { ...pt, r: 9 },
+            styles: { style: 'stroke_fill', color: '#1e222d', borderColor: '#a855f7', borderSize: 1.5 },
+          })
+          figures.push({
+            type: 'text',
+            attrs: { x: pt.x, y: pt.y, text: labels[idx], align: 'center', baseline: 'middle' },
+            styles: { color: '#ffffff', size: 10, weight: 'bold' },
+          })
+        })
+
+        return figures
+      }
+      return []
+    },
+  })
+
+  // 37. Cypher Pattern
+  registerOverlay({
+    name: 'cypherPattern',
+    totalStep: 6,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 4) {
+        const [x, a, b, c, d] = coordinates
+        const labels = ['X', 'A', 'B', 'C', 'D']
+        const figures = []
+        figures.push({
+          type: 'polygon',
+          attrs: { coordinates: [x, a, b] },
+          styles: { style: 'stroke_fill', color: 'rgba(59, 130, 246, 0.16)', borderColor: '#3b82f6', borderSize: 1.5 },
+        })
+        figures.push({
+          type: 'polygon',
+          attrs: { coordinates: [b, c, d] },
+          styles: { style: 'stroke_fill', color: 'rgba(59, 130, 246, 0.16)', borderColor: '#3b82f6', borderSize: 1.5 },
+        })
+        ;[x, a, b, c, d].forEach((pt, idx) => {
+          figures.push({
+            type: 'circle',
+            attrs: { ...pt, r: 9 },
+            styles: { style: 'stroke_fill', color: '#1e222d', borderColor: '#3b82f6', borderSize: 1.5 },
+          })
+          figures.push({
+            type: 'text',
+            attrs: { x: pt.x, y: pt.y, text: labels[idx], align: 'center', baseline: 'middle' },
+            styles: { color: '#ffffff', size: 10, weight: 'bold' },
+          })
+        })
+        return figures
+      }
+      return []
+    },
+  })
+
+  // 38. Triangle Pattern (Mô hình tam giác nén giá)
+  registerOverlay({
+    name: 'trianglePattern',
+    totalStep: 5,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 3) {
+        const [a, b, c, d] = coordinates
+        const figures = []
+        figures.push({
+          type: 'polygon',
+          attrs: { coordinates: [a, b, d, c] },
+          styles: { style: 'stroke_fill', color: 'rgba(8, 153, 129, 0.16)', borderColor: '#089981', borderSize: 1.5 },
+        })
+        figures.push({
+          type: 'line',
+          attrs: { coordinates: [a, c] },
+          styles: { color: '#089981', size: 2 },
+        })
+        figures.push({
+          type: 'line',
+          attrs: { coordinates: [b, d] },
+          styles: { color: '#089981', size: 2 },
+        })
+        ;[a, b, c, d].forEach((pt, idx) => {
+          figures.push({
+            type: 'circle',
+            attrs: { ...pt, r: 8 },
+            styles: { style: 'stroke_fill', color: '#1e222d', borderColor: '#089981', borderSize: 1.5 },
+          })
+          figures.push({
+            type: 'text',
+            attrs: { x: pt.x, y: pt.y, text: ['A', 'B', 'C', 'D'][idx], align: 'center', baseline: 'middle' },
+            styles: { color: '#ffffff', size: 9, weight: 'bold' },
+          })
+        })
+        return figures
+      }
+      return []
+    },
+  })
+
+  // 39. Elliott Triangle (Sóng tam giác Elliott A-B-C-D-E)
+  registerOverlay({
+    name: 'elliottTriangle',
+    totalStep: 7,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 5) {
+        const [pt0, a, b, c, d, e] = coordinates
+        const labels = ['0', 'A', 'B', 'C', 'D', 'E']
+        const figures = [
+          {
+            type: 'line',
+            attrs: { coordinates: [pt0, a, b, c, d, e] },
+            styles: { color: '#10b981', size: 2 },
+          },
+        ]
+        ;[pt0, a, b, c, d, e].forEach((pt, idx) => {
+          figures.push({
+            type: 'circle',
+            attrs: { ...pt, r: 9 },
+            styles: { style: 'stroke_fill', color: '#1e222d', borderColor: '#10b981', borderSize: 1.5 },
+          })
+          figures.push({
+            type: 'text',
+            attrs: { x: pt.x, y: pt.y, text: labels[idx], align: 'center', baseline: 'middle' },
+            styles: { color: '#10b981', size: 10, weight: 'bold' },
+          })
+        })
+        return figures
+      }
+      return []
+    },
+  })
+
+  // 40. Elliott Double Combo (Sóng kết hợp kép W-X-Y)
+  registerOverlay({
+    name: 'elliottDoubleCombo',
+    totalStep: 5,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 3) {
+        const [pt0, w, x, y] = coordinates
+        const labels = ['0', 'W', 'X', 'Y']
+        const figures = [
+          {
+            type: 'line',
+            attrs: { coordinates: [pt0, w, x, y] },
+            styles: { color: '#a855f7', size: 2 },
+          },
+        ]
+        ;[pt0, w, x, y].forEach((pt, idx) => {
+          figures.push({
+            type: 'circle',
+            attrs: { ...pt, r: 9 },
+            styles: { style: 'stroke_fill', color: '#1e222d', borderColor: '#a855f7', borderSize: 1.5 },
+          })
+          figures.push({
+            type: 'text',
+            attrs: { x: pt.x, y: pt.y, text: labels[idx], align: 'center', baseline: 'middle' },
+            styles: { color: '#a855f7', size: 10, weight: 'bold' },
+          })
+        })
+        return figures
+      }
+      return []
+    },
+  })
+
+  // 41. Cycle Lines (Các đường chu kỳ song song)
+  registerOverlay({
+    name: 'cycleLines',
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates, bounding }) => {
+      if (coordinates.length > 1) {
+        const dx = Math.abs(coordinates[1].x - coordinates[0].x)
+        if (dx < 10) return []
+        const width = bounding?.width || 1200
+        const height = bounding?.height || 600
+        const figures = []
+        const baseLeft = Math.min(coordinates[0].x, coordinates[1].x)
+
+        for (let x = baseLeft; x <= width; x += dx) {
+          figures.push({
+            type: 'line',
+            attrs: { coordinates: [{ x, y: 0 }, { x, y: height }] },
+            styles: { color: '#f59e0b', size: 1.5, style: 'dashed', dashedValue: [4, 4] },
+          })
+        }
+        for (let x = baseLeft - dx; x >= 0; x -= dx) {
+          figures.push({
+            type: 'line',
+            attrs: { coordinates: [{ x, y: 0 }, { x, y: height }] },
+            styles: { color: '#f59e0b', size: 1.5, style: 'dashed', dashedValue: [4, 4] },
+          })
+        }
+        return figures
+      }
+      return []
+    },
+  })
+
+  // 42. Gann Box (Mô hình hộp Gann)
+  registerOverlay({
+    name: 'gannBox',
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 1) {
+        const [p1, p2] = coordinates
+        const minX = Math.min(p1.x, p2.x)
+        const maxX = Math.max(p1.x, p2.x)
+        const minY = Math.min(p1.y, p2.y)
+        const maxY = Math.max(p1.y, p2.y)
+        const w = maxX - minX
+        const h = maxY - minY
+        const figures = [
+          {
+            type: 'polygon',
+            attrs: {
+              coordinates: [
+                { x: minX, y: minY },
+                { x: maxX, y: minY },
+                { x: maxX, y: maxY },
+                { x: minX, y: maxY },
+              ],
+            },
+            styles: { style: 'stroke_fill', color: 'rgba(59, 130, 246, 0.08)', borderColor: '#3b82f6', borderSize: 1.5 },
+          },
+          {
+            type: 'line',
+            attrs: { coordinates: [{ x: minX, y: minY }, { x: maxX, y: maxY }] },
+            styles: { color: '#3b82f6', size: 1.2 },
+          },
+          {
+            type: 'line',
+            attrs: { coordinates: [{ x: minX, y: maxY }, { x: maxX, y: minY }] },
+            styles: { color: '#3b82f6', size: 1.2 },
+          },
+        ]
+        ;[0.25, 0.5, 0.75].forEach((ratio) => {
+          const gx = minX + w * ratio
+          const gy = minY + h * ratio
+          figures.push({
+            type: 'line',
+            attrs: { coordinates: [{ x: gx, y: minY }, { x: gx, y: maxY }] },
+            styles: { color: 'rgba(59, 130, 246, 0.5)', size: 1, style: 'dashed', dashedValue: [2, 2] },
+          })
+          figures.push({
+            type: 'line',
+            attrs: { coordinates: [{ x: minX, y: gy }, { x: maxX, y: gy }] },
+            styles: { color: 'rgba(59, 130, 246, 0.5)', size: 1, style: 'dashed', dashedValue: [2, 2] },
+          })
+        })
+        return figures
+      }
+      return []
+    },
+  })
+
+  // 43. Gann Fan (Quạt Gann)
+  registerOverlay({
+    name: 'gannFan',
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 1) {
+        const [p1, p2] = coordinates
+        const dx = p2.x - p1.x
+        const dy = p2.y - p1.y
+        const figures = []
+        const ratios = [
+          { r: 8, label: '1x8' },
+          { r: 4, label: '1x4' },
+          { r: 3, label: '1x3' },
+          { r: 2, label: '1x2' },
+          { r: 1, label: '1x1' },
+          { r: 0.5, label: '2x1' },
+          { r: 0.33, label: '3x1' },
+          { r: 0.25, label: '4x1' },
+          { r: 0.125, label: '8x1' },
+        ]
+        ratios.forEach(({ r, label }) => {
+          const targetX = p1.x + dx * 2.5
+          const targetY = p1.y + dy * r * 2.5
+          figures.push({
+            type: 'line',
+            attrs: { coordinates: [p1, { x: targetX, y: targetY }] },
+            styles: { color: r === 1 ? '#f59e0b' : '#3b82f6', size: r === 1 ? 2 : 1 },
+          })
+          figures.push({
+            type: 'text',
+            attrs: { x: p1.x + dx * 1.5, y: p1.y + dy * r * 1.5, text: label, align: 'left', baseline: 'middle' },
+            styles: { color: '#ffffff', size: 9, backgroundColor: 'rgba(30, 34, 45, 0.8)', paddingLeft: 3, paddingRight: 3 },
+          })
+        })
+        return figures
+      }
+      return []
+    },
+  })
+
+  // 44. Price Note (Ghi chú giá)
+  registerOverlay({
+    name: 'priceNote',
+    totalStep: 2,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates, overlay }) => {
+      if (coordinates.length > 0) {
+        const pt = coordinates[0]
+        const val = overlay.points?.[0]?.value
+        const text = val != null ? `Ghi chú giá: ${formatNum(val)} VND` : 'Ghi chú giá'
+        return [
+          {
+            type: 'line',
+            attrs: { coordinates: [{ x: pt.x, y: pt.y - 30 }, pt] },
+            styles: { color: '#089981', size: 1.5 },
+          },
+          {
+            type: 'circle',
+            attrs: { ...pt, r: 4 },
+            styles: { style: 'stroke_fill', color: '#089981', borderColor: '#ffffff', borderSize: 1.5 },
+          },
+          {
+            type: 'text',
+            attrs: { x: pt.x, y: pt.y - 38, text, align: 'center', baseline: 'middle' },
+            styles: {
+              color: '#ffffff',
+              backgroundColor: '#089981',
+              paddingLeft: 8,
+              paddingRight: 8,
+              paddingTop: 4,
+              paddingBottom: 4,
+              borderRadius: 4,
+              size: 11,
+              weight: 'bold',
+            },
+          },
+        ]
+      }
+      return []
+    },
+  })
+
+  // 45. Comment Balloon (Bình luận bong bóng)
+  registerOverlay({
+    name: 'commentBalloon',
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 0) {
+        const targetPt = coordinates[0]
+        const bubblePt = coordinates.length > 1 ? coordinates[1] : { x: targetPt.x + 40, y: targetPt.y - 40 }
+        const text = 'Bình luận / Ghi chú'
+        return [
+          {
+            type: 'line',
+            attrs: { coordinates: [targetPt, bubblePt] },
+            styles: { color: '#e3b341', size: 1.5 },
+          },
+          {
+            type: 'circle',
+            attrs: { ...targetPt, r: 4 },
+            styles: { style: 'stroke_fill', color: '#e3b341', borderColor: '#ffffff', borderSize: 1.5 },
+          },
+          {
+            type: 'text',
+            attrs: { x: bubblePt.x, y: bubblePt.y, text, align: 'center', baseline: 'middle' },
+            styles: {
+              color: '#131722',
+              backgroundColor: '#e3b341',
+              paddingLeft: 10,
+              paddingRight: 10,
+              paddingTop: 6,
+              paddingBottom: 6,
+              borderRadius: 6,
+              size: 11,
+              weight: 'bold',
+            },
+          },
+        ]
+      }
+      return []
+    },
+  })
+
+  // 46. Flag Mark (Cờ đánh dấu)
+  registerOverlay({
+    name: 'flagMark',
+    totalStep: 2,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 0) {
+        const pt = coordinates[0]
+        return [
+          {
+            type: 'line',
+            attrs: { coordinates: [pt, { x: pt.x, y: pt.y - 35 }] },
+            styles: { color: '#ffffff', size: 2 },
+          },
+          {
+            type: 'polygon',
+            attrs: {
+              coordinates: [
+                { x: pt.x, y: pt.y - 35 },
+                { x: pt.x + 22, y: pt.y - 25 },
+                { x: pt.x, y: pt.y - 15 },
+              ],
+            },
+            styles: { style: 'stroke_fill', color: '#f23645', borderColor: '#ff4d4f', borderSize: 1 },
+          },
+        ]
+      }
+      return []
+    },
+  })
+
+  // 47. Signpost (Biển chỉ dẫn)
+  registerOverlay({
+    name: 'signpost',
+    totalStep: 2,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 0) {
+        const pt = coordinates[0]
+        return [
+          {
+            type: 'line',
+            attrs: { coordinates: [pt, { x: pt.x, y: pt.y - 45 }] },
+            styles: { color: '#9ca3af', size: 2 },
+          },
+          {
+            type: 'text',
+            attrs: { x: pt.x, y: pt.y - 45, text: '📍 Mốc sự kiện', align: 'center', baseline: 'middle' },
+            styles: {
+              color: '#ffffff',
+              backgroundColor: '#ec4899',
+              paddingLeft: 8,
+              paddingRight: 8,
+              paddingTop: 4,
+              paddingBottom: 4,
+              borderRadius: 4,
+              size: 11,
+              weight: 'bold',
+            },
+          },
+        ]
+      }
+      return []
+    },
+  })
+
+  // 48. Forecast (Dự báo vị thế)
+  registerOverlay({
+    name: 'forecast',
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      if (coordinates.length > 1) {
+        const [p1, p2] = coordinates
+        const isUp = p2.y <= p1.y
+        const color = isUp ? '#089981' : '#f23645'
+        return [
+          {
+            type: 'line',
+            attrs: { coordinates: [p1, p2] },
+            styles: { color, size: 2, style: 'dashed', dashedValue: [4, 4] },
+          },
+          {
+            type: 'circle',
+            attrs: { ...p2, r: 6 },
+            styles: { style: 'stroke_fill', color, borderColor: '#ffffff', borderSize: 1.5 },
+          },
+          {
+            type: 'text',
+            attrs: { x: p2.x + 8, y: p2.y, text: 'Mục tiêu dự báo', align: 'left', baseline: 'middle' },
+            styles: { color, size: 11, weight: 'bold' },
+          },
+        ]
+      }
+      return []
+    },
+  })
+
   registered = true
 }
