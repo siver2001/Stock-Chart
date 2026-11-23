@@ -1010,17 +1010,19 @@ body.theme-light .tv-ind-pill {
 
 /* ==========================================================================
    ENHANCED PANE SEPARATOR (DỄ KÉO THẢ PHÂN CHIA CHỈ BÁO CHUẨN TRADINGVIEW)
+   Lưu ý: Chỉ áp dụng cho thanh phân chia (có style width: 100%),
+   TUYỆT ĐỐI KHÔNG áp dụng vào thước đo Y (YAxisWidget có width cố định ~60-70px)
    ========================================================================== */
-.tv-klinechart-dom div[style*="cursor: ns-resize"] {
-  height: 14px !important;
-  margin-top: -6px !important;
-  z-index: 30 !important;
+.tv-klinechart-dom div[style*="100%"][style*="ns-resize"] {
+  height: 10px !important;
+  margin-top: -4px !important;
+  z-index: 25 !important;
   cursor: ns-resize !important;
   transition: background-color 0.12s ease, box-shadow 0.12s ease;
 }
 
-.tv-klinechart-dom div[style*="cursor: ns-resize"]:hover,
-.tv-klinechart-dom div[style*="cursor: ns-resize"]:active {
+.tv-klinechart-dom div[style*="100%"][style*="ns-resize"]:hover,
+.tv-klinechart-dom div[style*="100%"][style*="ns-resize"]:active {
   background-color: rgba(41, 98, 255, 0.75) !important;
   box-shadow: 0 0 10px rgba(41, 98, 255, 0.6) !important;
 }

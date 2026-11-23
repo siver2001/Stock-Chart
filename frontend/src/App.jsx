@@ -177,6 +177,20 @@ const getThemeStyles = (theme, chartType = 'candle_solid') => {
         downColor: '#f23645',
         noChangeColor: '#888888',
       },
+      lastValueMark: {
+        show: true,
+        text: {
+          show: true,
+          style: 'fill',
+          color: '#ffffff',
+          size: 11,
+          paddingLeft: 4,
+          paddingTop: 3,
+          paddingRight: 4,
+          paddingBottom: 3,
+          borderRadius: 2,
+        },
+      },
       bars: [
         {
           style: 'fill',
@@ -563,7 +577,7 @@ export default function App() {
         })
 
         if (typeof chart.adjustPaneViewport === 'function') {
-          chart.adjustPaneViewport(false, true, true, true)
+          chart.adjustPaneViewport(false, true, true, true, true)
         }
         return
       }
@@ -691,7 +705,7 @@ export default function App() {
         })
 
         if (typeof chart.adjustPaneViewport === 'function') {
-          chart.adjustPaneViewport(false, true, true, true)
+          chart.adjustPaneViewport(false, true, true, true, true)
         }
       }
     }
