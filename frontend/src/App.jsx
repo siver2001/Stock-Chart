@@ -562,8 +562,10 @@ export default function App() {
         if (!axis) return
 
         const dy = e.clientY - yAxisDragStartY
-        // Công thức co giãn hàm số mũ chuẩn TradingView: di chuyển chuột 30-50px là co giãn rõ rệt, mượt mà ở mọi vị trí
-        const factor = Math.exp(-dy * 0.007)
+        // Chuẩn TradingView 100%:
+        // - Kéo chuột LÊN (dy < 0): Giãn biểu đồ theo chiều dọc (phóng to nến/chỉ báo cao hơn)
+        // - Kéo chuột XUỐNG (dy > 0): Bóp biểu đồ theo chiều dọc (thu nhỏ/dẹt nến và chỉ báo lại)
+        const factor = Math.exp(dy * 0.007)
         const mid = (yAxisInitialRange.from + yAxisInitialRange.to) / 2
         const half = ((yAxisInitialRange.to - yAxisInitialRange.from) * factor) / 2
         const newFrom = mid - half
