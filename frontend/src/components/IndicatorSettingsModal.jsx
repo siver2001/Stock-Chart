@@ -35,7 +35,11 @@ export default function IndicatorSettingsModal({
     if (indName === 'MACD') return [12, 26, 9]
     if (indName === 'KDJ') return [9, 3, 3]
     if (indName === 'WEIS_WAVE') return [2, 0]
-    if (indName === 'ADX_DI' || indName === 'ADX_DI_BO') return [14]
+    if (indName === 'ADX_DI' || indName === 'ADX_DI_BO') return [14, 20]
+    if (indName === 'SUPERTREND') return [10, 3]
+    if (indName === 'ICHIMOKU') return [9, 26, 52]
+    if (indName === 'MFI') return [14]
+    if (indName === 'VWAP') return [1, 2]
     return []
   })
 
@@ -93,6 +97,14 @@ export default function IndicatorSettingsModal({
       setVolOpacity(65)
     } else if (indName === 'WEIS_WAVE') {
       setCalcParams([2, 0])
+    } else if (indName === 'SUPERTREND') {
+      setCalcParams([10, 3])
+    } else if (indName === 'ICHIMOKU') {
+      setCalcParams([9, 26, 52])
+    } else if (indName === 'MFI') {
+      setCalcParams([14])
+    } else if (indName === 'VWAP') {
+      setCalcParams([1, 2])
     }
   }
 
@@ -133,6 +145,12 @@ export default function IndicatorSettingsModal({
       case 'MACD': return 'Chỉ báo xu hướng MACD'
       case 'VOL': return 'Khối lượng giao dịch (Volume chân nến)'
       case 'WEIS_WAVE': return 'Sóng tích lũy Weis Wave Volume'
+      case 'SUPERTREND': return 'Chỉ báo xu hướng SuperTrend (Olivier Seban)'
+      case 'VOLUME_PROFILE': return 'Vùng khối lượng kháng cự & hỗ trợ (Volume Profile)'
+      case 'ICHIMOKU': return 'Hệ thống Mây Ichimoku Kinko Hyo'
+      case 'VWAP': return 'Giá bình quân khối lượng (VWAP)'
+      case 'MFI': return 'Chỉ số dòng tiền (Money Flow Index)'
+      case 'OBV': return 'Chỉ số khối lượng cân bằng (OBV)'
       default: return `Chỉ báo ${indName}`
     }
   }
@@ -634,6 +652,44 @@ export default function IndicatorSettingsModal({
                 {indName === 'VOL' && (
                   <div>
                     <strong>Khối lượng chân nến:</strong> Vẽ trực tiếp cột Volume ở 18% chân nến tương tự TradingView, cho phép đọc khối lượng kèm hành động giá Price Action trực quan mà không chiếm diện tích màn hình.
+                  </div>
+                )}
+                {indName === 'SUPERTREND' && (
+                  <div>
+                    <strong>SuperTrend (Olivier Seban):</strong>
+                    <ul style={{ paddingLeft: '20px', marginTop: '6px', listStyleType: 'disc' }}>
+                      <li><strong>Dải Xanh (#089981) nằm dưới nến:</strong> Xu hướng TĂNG chủ đạo. Báo hiệu Mua và nắm giữ cổ phiếu.</li>
+                      <li><strong>Dải Đỏ (#f23645) nằm trên nến:</strong> Xu hướng GIẢM chủ đạo. Báo hiệu Bán hoặc chốt lời / cắt lỗ.</li>
+                    </ul>
+                  </div>
+                )}
+                {indName === 'VOLUME_PROFILE' && (
+                  <div>
+                    <strong>Volume Profile (Kháng cự &amp; Hỗ trợ Volume):</strong>
+                    <ul style={{ paddingLeft: '20px', marginTop: '6px', listStyleType: 'disc' }}>
+                      <li><strong>Đường POC (Vàng nét đứt):</strong> Mức giá có khối lượng giao dịch lớn nhất (vùng hỗ trợ / kháng cự cực mạnh).</li>
+                      <li><strong>Dải VAH - VAL:</strong> Vùng giá trị tập trung 70% khối lượng giao dịch của toàn bộ phiên quan sát.</li>
+                    </ul>
+                  </div>
+                )}
+                {indName === 'ICHIMOKU' && (
+                  <div>
+                    <strong>Mây Ichimoku Kinko Hyo:</strong>
+                    <ul style={{ paddingLeft: '20px', marginTop: '6px', listStyleType: 'disc' }}>
+                      <li><strong>Giá nằm trên Mây Kumo:</strong> Xu hướng Tăng mạnh (Bullish).</li>
+                      <li><strong>Giá nằm dưới Mây Kumo:</strong> Xu hướng Giảm mạnh (Bearish).</li>
+                      <li><strong>Đường Tenkan cắt lên Kijun:</strong> Điểm mua gia tăng tỷ trọng.</li>
+                    </ul>
+                  </div>
+                )}
+                {indName === 'VWAP' && (
+                  <div>
+                    <strong>VWAP (Volume Weighted Average Price):</strong> Giá bình quân gia quyền theo khối lượng. Giá trên VWAP thể hiện phe Mua kiểm soát; Giá dưới VWAP thể hiện phe Bán chiếm ưu thế.
+                  </div>
+                )}
+                {indName === 'MFI' && (
+                  <div>
+                    <strong>MFI (Chỉ số dòng tiền):</strong> Kết hợp Giá và Khối lượng để phát hiện phân kỳ dòng tiền. MFI &gt; 80 là vùng Quá mua, MFI &lt; 20 là vùng Quá bán tích lũy.
                   </div>
                 )}
               </div>

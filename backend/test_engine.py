@@ -13,6 +13,7 @@ from indicators import (
     compute_cm_macd_mtf,
     compute_adx_di_beikabu,
     compute_weis_wave_volume,
+    compute_supertrend,
 )
 from backtester import BacktestConfig, run_backtest
 
@@ -95,9 +96,37 @@ def test_backtester_vn_rules_and_no_lookahead():
     print(f"[PASS] Backtester VN Rules & Zero Lookahead | Trades={m['total_trades']} | Return={m['total_return_pct']}% | MaxDD={m['max_drawdown_pct']}% | WinRate={m['win_rate_pct']}%")
 
 
+def test_supertrend_and_backtester():
+    df = generate_demo_ohlcv("SSI", "2023-01-01", "2026-06-01", "1D")
+    st_df = compute_supertrend(df, period=10, multiplier=3.0)
+    assert set(st_df["st_trend"].dropna().unique()).issubset({-1, 1}), "SuperTrend trend must be 1 or -1"
+    
+    # Backtest with pure SuperTrend strategy
+    cfg = BacktestConfig(
+        initial_capital=100_000_000,
+        enforce_t_plus_2=True,
+        execution_mode="next_open",
+        use_supertrend=True,
+        use_macd=False,
+        use_adx=False,
+        use_weis_wave=False,
+        exit_mode="supertrend",
+        stop_loss_pct=0.07,
+        take_profit_pct=0.25,
+    )
+    res = run_backtest(df, cfg)
+    m = res["metrics"]
+    assert m["total_trades"] > 0, "SuperTrend must generate trades on multi-year data"
+    for t in res["trades"]:
+        assert t["shares"] % 100 == 0
+        assert t["holding_bars"] >= 2
+    print(f"[PASS] SuperTrend Strategy Backtest | Trades={m['total_trades']} | Return={m['total_return_pct']}% | WinRate={m['win_rate_pct']}%")
+
+
 if __name__ == "__main__":
     test_cm_macd_uses_sma_signal()
     test_adx_di_beikabu_uses_sma_dx()
     test_weis_wave_volume()
     test_backtester_vn_rules_and_no_lookahead()
+    test_supertrend_and_backtester()
     print("\nALL TESTS PASSED SUCCESSFULLY!")

@@ -39,12 +39,15 @@ class BacktestConfig:
     adx_length: int = 14
     adx_threshold: float = 20.0
     ww_trend_len: int = 2
+    st_period: int = 10
+    st_mult: float = 3.0
 
     # Strategy toggles
     use_macd: bool = True
     use_adx: bool = True
     use_weis_wave: bool = True
-    exit_mode: str = "macd_or_di"           # "macd_cross", "macd_or_di", "any_bearish"
+    use_supertrend: bool = False
+    exit_mode: str = "macd_or_di"           # "macd_cross", "macd_or_di", "any_bearish", "supertrend"
 
     # Risk management (0 = disabled)
     stop_loss_pct: float = 0.07             # 7% cắt lỗ
@@ -63,6 +66,8 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         macd_mtf=config.macd_mtf,
         adx_length=config.adx_length,
         ww_trend_len=config.ww_trend_len,
+        st_period=config.st_period,
+        st_mult=config.st_mult,
     )
 
     n = len(df)
@@ -79,6 +84,9 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
     di_minus = df["di_minus"].to_numpy(dtype=float)
     adx = df["adx"].to_numpy(dtype=float)
     ww_wave = df["ww_wave"].to_numpy(dtype=int)
+    st_trend = df["st_trend"].to_numpy(dtype=int)
+    st_buy = df["st_buy"].to_numpy(dtype=bool)
+    st_sell = df["st_sell"].to_numpy(dtype=bool)
 
     cash = float(config.initial_capital)
     shares = 0
@@ -199,8 +207,11 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         cond_macd_bull = (cm_macd[i] > cm_signal[i]) and (cm_hist[i] >= cm_hist[i - 1])
         cond_adx_bull = (di_plus[i] > di_minus[i]) and (adx[i] >= config.adx_threshold)
         cond_ww_bull = (ww_wave[i] == 1)
+        cond_st_bull = (st_trend[i] == 1)
 
         buy_signal = True
+        if config.use_supertrend:
+            buy_signal = buy_signal and cond_st_bull
         if config.use_macd:
             buy_signal = buy_signal and cond_macd_bull
         if config.use_adx:
@@ -212,21 +223,31 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         macd_bear = cm_macd[i] < cm_signal[i]
         di_bear = di_minus[i] > di_plus[i]
         ww_bear = ww_wave[i] == -1
+        st_bear = st_trend[i] == -1
 
         sell_signal = False
         sell_reason = ""
-        if config.exit_mode == "macd_cross":
+        if config.exit_mode == "supertrend":
+            if st_bear:
+                sell_signal, sell_reason = True, "SuperTrend Bearish (Đảo chiều)"
+            elif config.use_macd and macd_bear:
+                sell_signal, sell_reason = True, "MACD Bearish Cross"
+        elif config.exit_mode == "macd_cross":
             if macd_bear:
                 sell_signal, sell_reason = True, "MACD Bearish Cross"
         elif config.exit_mode == "any_bearish":
-            if macd_bear:
+            if st_bear and config.use_supertrend:
+                sell_signal, sell_reason = True, "SuperTrend Bearish"
+            elif macd_bear:
                 sell_signal, sell_reason = True, "MACD Bearish"
             elif di_bear:
                 sell_signal, sell_reason = True, "DI- > DI+"
             elif ww_bear:
                 sell_signal, sell_reason = True, "Weis Wave Down"
         else:  # macd_or_di (balanced default)
-            if macd_bear:
+            if st_bear and config.use_supertrend:
+                sell_signal, sell_reason = True, "SuperTrend Bearish"
+            elif macd_bear:
                 sell_signal, sell_reason = True, "MACD Bearish Cross"
             elif di_bear:
                 sell_signal, sell_reason = True, "DI- > DI+"

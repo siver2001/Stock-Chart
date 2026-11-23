@@ -240,6 +240,87 @@ def compute_weis_wave_volume(
     )
 
 
+def compute_supertrend(
+    df: pd.DataFrame,
+    period: int = 10,
+    multiplier: float = 3.0,
+) -> pd.DataFrame:
+    """
+    SuperTrend Indicator (Olivier Seban).
+    - Wilder RMA True Range (ATR)
+    - Upper Band / Lower Band adjustment
+    - Returns: supertrend_val, supertrend_trend (1=Bull, -1=Bear), supertrend_buy, supertrend_sell
+    """
+    n = len(df)
+    high = df["high"].to_numpy(dtype=float)
+    low = df["low"].to_numpy(dtype=float)
+    close = df["close"].to_numpy(dtype=float)
+
+    tr = np.zeros(n)
+    tr[0] = high[0] - low[0]
+    for i in range(1, n):
+        tr[i] = max(high[i] - low[i], abs(high[i] - close[i - 1]), abs(low[i] - close[i - 1]))
+
+    atr = np.zeros(n)
+    if n >= period:
+        atr[period - 1] = np.mean(tr[:period])
+        for i in range(period, n):
+            atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
+
+    upper_band = np.zeros(n)
+    lower_band = np.zeros(n)
+    trend = np.ones(n, dtype=int)
+
+    for i in range(n):
+        if i < period - 1:
+            upper_band[i] = high[i]
+            lower_band[i] = low[i]
+            trend[i] = 1
+            continue
+
+        hl2 = (high[i] + low[i]) / 2.0
+        basic_upper = hl2 + multiplier * atr[i]
+        basic_lower = hl2 - multiplier * atr[i]
+
+        prev_upper = upper_band[i - 1]
+        prev_lower = lower_band[i - 1]
+        prev_close = close[i - 1]
+        prev_trend = trend[i - 1]
+
+        if basic_upper < prev_upper or prev_close > prev_upper:
+            curr_upper = basic_upper
+        else:
+            curr_upper = prev_upper
+
+        if basic_lower > prev_lower or prev_close < prev_lower:
+            curr_lower = basic_lower
+        else:
+            curr_lower = prev_lower
+
+        if prev_trend == 1:
+            curr_trend = -1 if close[i] < curr_lower else 1
+        else:
+            curr_trend = 1 if close[i] > curr_upper else -1
+
+        upper_band[i] = curr_upper
+        lower_band[i] = curr_lower
+        trend[i] = curr_trend
+
+    prev_trend_series = pd.Series(trend).shift(1).fillna(1).to_numpy(dtype=int)
+    buy_signals = (trend == 1) & (prev_trend_series == -1)
+    sell_signals = (trend == -1) & (prev_trend_series == 1)
+
+    return pd.DataFrame(
+        {
+            "st_val": np.where(trend == 1, lower_band, upper_band),
+            "st_trend": trend,
+            "st_buy": buy_signals,
+            "st_sell": sell_signals,
+        },
+        index=df.index,
+    )
+
+
 def attach_all_indicators(
     df: pd.DataFrame,
     macd_fast: int = 12,
@@ -249,10 +330,13 @@ def attach_all_indicators(
     adx_length: int = 14,
     ww_trend_len: int = 2,
     ww_below_zero: bool = False,
+    st_period: int = 10,
+    st_mult: float = 3.0,
 ) -> pd.DataFrame:
-    """Compute and concatenate all 3 indicators onto a copy of df."""
+    """Compute and concatenate all indicators onto a copy of df."""
     res = df.copy().reset_index(drop=True)
     m = compute_cm_macd_mtf(res, macd_fast, macd_slow, macd_signal, macd_mtf, no_lookahead=True)
     a = compute_adx_di_beikabu(res, adx_length)
     w = compute_weis_wave_volume(res, ww_trend_len, ww_below_zero)
-    return pd.concat([res, m, a, w], axis=1)
+    st = compute_supertrend(res, st_period, st_mult)
+    return pd.concat([res, m, a, w, st], axis=1)

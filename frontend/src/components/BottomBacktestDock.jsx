@@ -73,6 +73,9 @@ export default function BottomBacktestDock({
     use_macd: true,
     use_adx: true,
     use_weis_wave: true,
+    use_supertrend: false,
+    st_period: 10,
+    st_mult: 3.0,
   })
 
   const [loading, setLoading] = useState(false)
@@ -92,6 +95,41 @@ export default function BottomBacktestDock({
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  const applyPreset = (presetType) => {
+    if (presetType === 'supertrend_pure') {
+      setForm((prev) => ({
+        ...prev,
+        use_supertrend: true,
+        use_macd: false,
+        use_adx: false,
+        use_weis_wave: false,
+        st_period: 10,
+        st_mult: 3.0,
+        exit_mode: 'supertrend',
+      }))
+    } else if (presetType === 'supertrend_macd') {
+      setForm((prev) => ({
+        ...prev,
+        use_supertrend: true,
+        use_macd: true,
+        use_adx: false,
+        use_weis_wave: false,
+        st_period: 10,
+        st_mult: 3.0,
+        exit_mode: 'supertrend',
+      }))
+    } else if (presetType === 'combo_classic') {
+      setForm((prev) => ({
+        ...prev,
+        use_supertrend: false,
+        use_macd: true,
+        use_adx: true,
+        use_weis_wave: true,
+        exit_mode: 'macd_or_di',
+      }))
+    }
+  }
+
   const handleRun = async () => {
     setLoading(true)
     setError('')
@@ -101,6 +139,8 @@ export default function BottomBacktestDock({
         symbol: (form.symbol || activeSymbol || 'VNINDEX').toUpperCase(),
         initial_capital: Number(form.initial_capital),
         adx_threshold: Number(form.adx_threshold),
+        st_period: Number(form.st_period) || 10,
+        st_mult: Number(form.st_mult) || 3.0,
         stop_loss_pct: Number(form.stop_loss_pct) / 100,
         take_profit_pct: Number(form.take_profit_pct) / 100,
       }
@@ -364,6 +404,34 @@ export default function BottomBacktestDock({
         {/* TAB 4: SETTINGS */}
         {activeTab === 'SETTINGS' && (
           <div className="tv-tab-settings">
+            <div className="tv-presets-row" style={{ display: 'flex', gap: '8px', marginBottom: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12px', color: '#787b86', fontWeight: 600 }}>Chiến lược mẫu:</span>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer' }}
+                onClick={() => applyPreset('combo_classic')}
+              >
+                1. Combo MACD + ADX + Weis Wave
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#58a6ff' }}
+                onClick={() => applyPreset('supertrend_macd')}
+              >
+                2. SuperTrend + CM MACD
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#089981' }}
+                onClick={() => applyPreset('supertrend_pure')}
+              >
+                3. SuperTrend Thuần Túy (ATR 10, 3.0)
+              </button>
+            </div>
+
             <div className="tv-form-grid-3col">
               <div className="tv-field">
                 <label>Mã cổ phiếu</label>
@@ -414,6 +482,7 @@ export default function BottomBacktestDock({
                 <label>Chế độ thoát lệnh</label>
                 <select value={form.exit_mode} onChange={(e) => handleChange('exit_mode', e.target.value)}>
                   <option value="macd_or_di">Cân bằng: MACD cắt xuống hoặc DI- &gt; DI+</option>
+                  <option value="supertrend">SuperTrend: Bán khi dải chuyển sang Đỏ</option>
                   <option value="macd_cross">Bảo thủ: Chỉ khi MACD cắt xuống Signal</option>
                   <option value="any_bearish">Nhạy bén: Bất kỳ chỉ báo nào đảo chiều</option>
                 </select>
@@ -439,6 +508,28 @@ export default function BottomBacktestDock({
                 />
               </div>
 
+              {form.use_supertrend && (
+                <>
+                  <div className="tv-field">
+                    <label>SuperTrend Chu kỳ ATR (Period)</label>
+                    <input
+                      type="number"
+                      value={form.st_period}
+                      onChange={(e) => handleChange('st_period', Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="tv-field">
+                    <label>SuperTrend Hệ số nhân (Multiplier)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={form.st_mult}
+                      onChange={(e) => handleChange('st_mult', Number(e.target.value))}
+                    />
+                  </div>
+                </>
+              )}
+
               <div className="tv-field tv-checkboxes-block">
                 <label className="tv-chk-label">
                   <input
@@ -447,6 +538,14 @@ export default function BottomBacktestDock({
                     onChange={(e) => handleChange('enforce_t_plus_2', e.target.checked)}
                   />
                   <span>Áp dụng quy định T+2.5 TTCK VN</span>
+                </label>
+                <label className="tv-chk-label">
+                  <input
+                    type="checkbox"
+                    checked={form.use_supertrend}
+                    onChange={(e) => handleChange('use_supertrend', e.target.checked)}
+                  />
+                  <span>Dùng SuperTrend (Olivier Seban ATR)</span>
                 </label>
                 <label className="tv-chk-label">
                   <input

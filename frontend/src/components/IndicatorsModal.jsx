@@ -2,7 +2,43 @@ import React, { useState } from 'react'
 import { Search, X, Check, Star, Sparkles, Activity, BarChart2 } from 'lucide-react'
 
 export const AVAILABLE_INDICATORS = [
-  // 3 Custom VN Indicators
+  // Custom VN Indicators & High-impact TradingView Community
+  {
+    name: 'SUPERTREND',
+    title: 'SuperTrend (Olivier Seban)',
+    author: 'Olivier Seban',
+    category: 'TREND',
+    isOverlay: true,
+    description: 'Chỉ báo xu hướng hàng đầu TradingView dựa trên biến động ATR (10, 3.0). Dải Xanh (#089981) báo điểm Mua & giữ vị thế tăng, dải Đỏ (#f23645) báo điểm Bán & cắt lỗ.',
+    tags: ['SuperTrend', 'Xu hướng', 'Điểm Mua Bán', 'ATR', 'Overlay', 'Custom VN'],
+  },
+  {
+    name: 'VOLUME_PROFILE',
+    title: 'Volume Profile (Volume Kháng cự & Hỗ trợ)',
+    author: 'TradingView Style',
+    category: 'VOLUME',
+    isOverlay: true,
+    description: 'Khối lượng giao dịch theo bước giá (Volume by Price). Tự động xác định đường POC (vùng tập trung volume khủng nhất) cùng dải giá trị VAH / VAL (70% volume).',
+    tags: ['Volume Profile', 'Kháng cự', 'Hỗ trợ', 'POC', 'VAH', 'VAL', 'Vùng biến động', 'Overlay'],
+  },
+  {
+    name: 'ICHIMOKU',
+    title: 'Mây Ichimoku Kinko Hyo',
+    author: 'Goichi Hosoda',
+    category: 'TREND',
+    isOverlay: true,
+    description: 'Hệ thống giao dịch toàn diện chuẩn Nhật Bản: Tenkan-sen (9), Kijun-sen (26), Mây Kumo hỗ trợ/kháng cự (Senkou Span A & B 52), Chikou Span (26).',
+    tags: ['Ichimoku', 'Mây Kumo', 'Tenkan', 'Kijun', 'Xu hướng', 'Overlay'],
+  },
+  {
+    name: 'VWAP',
+    title: 'VWAP (Volume Weighted Average Price)',
+    author: 'Institutional',
+    category: 'TREND',
+    isOverlay: true,
+    description: 'Giá bình quân gia quyền theo khối lượng kèm dải độ lệch chuẩn. Chuẩn mực đo lường vị thế gom hàng/xả hàng của dòng tiền tổ chức trong phiên.',
+    tags: ['VWAP', 'Dòng tiền', 'Giá bình quân', 'Lướt sóng', 'Overlay'],
+  },
   {
     name: 'CM_MACD_MTF',
     title: 'CM MACD Custom MTF',
@@ -29,6 +65,24 @@ export const AVAILABLE_INDICATORS = [
     isOverlay: false,
     description: 'Thuật toán cộng dồn khối lượng theo sóng giá (trendDetectionLength = 2), định dạng số lớn gọn gàng (1.5M, 250K), sóng tăng Xanh, sóng giảm Đỏ.',
     tags: ['Weis Wave', 'Volume', 'Dòng tiền', 'Custom VN'],
+  },
+  {
+    name: 'MFI',
+    title: 'Money Flow Index (MFI - Chỉ số Dòng tiền)',
+    author: 'Gene Quong & Avrum Soudack',
+    category: 'MOMENTUM',
+    isOverlay: false,
+    description: 'Chỉ báo đo lường áp lực mua bán kết hợp cả Giá và Khối lượng (RSI có trọng số Volume). Vùng quá mua > 80, quá bán < 20, báo hiệu phân kỳ đảo chiều sớm.',
+    tags: ['MFI', 'Dòng tiền', 'Động lượng', 'Quá mua/Quá bán'],
+  },
+  {
+    name: 'OBV',
+    title: 'On Balance Volume (OBV - Khối lượng cân bằng)',
+    author: 'Joseph Granville',
+    category: 'VOLUME',
+    isOverlay: false,
+    description: 'Chỉ số khối lượng cân bằng cộng dồn theo các phiên tăng giảm. Nhận biết sớm dòng tiền cá mập âm thầm gom hàng trước khi giá bùng nổ.',
+    tags: ['OBV', 'Khối lượng', 'Tích lũy', 'Dòng tiền'],
   },
   // Technical Overlays (Chồng lên biểu đồ nến)
   {
@@ -70,11 +124,11 @@ export const AVAILABLE_INDICATORS = [
   // Technical Sub-panes & Overlays
   {
     name: 'VOL',
-    title: 'Volume (Khối lượng giao dịch)',
+    title: 'Volume (Khối lượng giao dịch chân nến)',
     author: 'TradingView Style',
     category: 'VOLUME',
     isOverlay: true,
-    description: 'Khối lượng giao dịch chân nến (tối đa 16% chiều cao), không làm lệch trục giá bên phải, rê chuột xem số lượng CP.',
+    description: 'Khối lượng giao dịch chân nến (tối đa 18% chiều cao), không làm lệch trục giá bên phải, rê chuột xem số lượng CP.',
     tags: ['Volume', 'Thanh khoản', 'Overlay'],
   },
   {
