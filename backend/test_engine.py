@@ -14,6 +14,8 @@ from indicators import (
     compute_adx_di_beikabu,
     compute_weis_wave_volume,
     compute_supertrend,
+    compute_squeeze_momentum,
+    compute_wavetrend,
 )
 from backtester import BacktestConfig, run_backtest
 
@@ -123,10 +125,70 @@ def test_supertrend_and_backtester():
     print(f"[PASS] SuperTrend Strategy Backtest | Trades={m['total_trades']} | Return={m['total_return_pct']}% | WinRate={m['win_rate_pct']}%")
 
 
+def test_squeeze_momentum_and_backtester():
+    df = generate_demo_ohlcv("HPG", "2023-01-01", "2026-06-01", "1D")
+    sqz_df = compute_squeeze_momentum(df, length=20, bb_mult=2.0, kc_mult=1.5)
+    assert "sqz_mom" in sqz_df.columns
+    assert set(sqz_df["sqz_color"].unique()).issubset({1, 2, 3, 4})
+    
+    # Pure Squeeze Momentum Strategy Backtest
+    cfg = BacktestConfig(
+        initial_capital=100_000_000,
+        enforce_t_plus_2=True,
+        execution_mode="next_open",
+        use_squeeze=True,
+        use_supertrend=False,
+        use_macd=False,
+        use_adx=False,
+        use_weis_wave=False,
+        exit_mode="squeeze",
+        stop_loss_pct=0.07,
+        take_profit_pct=0.25,
+    )
+    res = run_backtest(df, cfg)
+    m = res["metrics"]
+    assert m["total_trades"] > 0, "Squeeze Momentum must generate trades"
+    for t in res["trades"]:
+        assert t["shares"] % 100 == 0
+        assert t["holding_bars"] >= 2
+    print(f"[PASS] Squeeze Momentum Strategy Backtest | Trades={m['total_trades']} | Return={m['total_return_pct']}% | WinRate={m['win_rate_pct']}%")
+
+
+def test_wavetrend_and_backtester():
+    df = generate_demo_ohlcv("FPT", "2023-01-01", "2026-06-01", "1D")
+    wt_df = compute_wavetrend(df, chlen=10, avglen=21, smalen=4)
+    assert "wt1" in wt_df.columns and "wt2" in wt_df.columns
+    
+    # Pure WaveTrend Strategy Backtest
+    cfg = BacktestConfig(
+        initial_capital=100_000_000,
+        enforce_t_plus_2=True,
+        execution_mode="next_open",
+        use_wavetrend=True,
+        use_squeeze=False,
+        use_supertrend=False,
+        use_macd=False,
+        use_adx=False,
+        use_weis_wave=False,
+        exit_mode="wavetrend",
+        stop_loss_pct=0.07,
+        take_profit_pct=0.25,
+    )
+    res = run_backtest(df, cfg)
+    m = res["metrics"]
+    assert m["total_trades"] > 0, "WaveTrend must generate trades"
+    for t in res["trades"]:
+        assert t["shares"] % 100 == 0
+        assert t["holding_bars"] >= 2
+    print(f"[PASS] WaveTrend Oscillator Strategy Backtest | Trades={m['total_trades']} | Return={m['total_return_pct']}% | WinRate={m['win_rate_pct']}%")
+
+
 if __name__ == "__main__":
     test_cm_macd_uses_sma_signal()
     test_adx_di_beikabu_uses_sma_dx()
     test_weis_wave_volume()
     test_backtester_vn_rules_and_no_lookahead()
     test_supertrend_and_backtester()
+    test_squeeze_momentum_and_backtester()
+    test_wavetrend_and_backtester()
     print("\nALL TESTS PASSED SUCCESSFULLY!")

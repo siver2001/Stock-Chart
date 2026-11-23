@@ -8,6 +8,8 @@ import { volumeProfileIndicator } from './volumeProfile'
 import { ichimokuCloudIndicator } from './ichimokuCloud'
 import { vwapIndicator } from './vwap'
 import { mfiIndicator } from './mfi'
+import { squeezeMomentumIndicator } from './squeezeMomentum'
+import { waveTrendIndicator } from './waveTrend'
 import { registerCustomOverlays } from './customOverlays'
 
 let registered = false
@@ -25,6 +27,8 @@ export function registerAllCustomIndicators() {
   registerIndicator(ichimokuCloudIndicator)
   registerIndicator(vwapIndicator)
   registerIndicator(mfiIndicator)
+  registerIndicator(squeezeMomentumIndicator)
+  registerIndicator(waveTrendIndicator)
   registerCustomOverlays()
   registered = true
 }

@@ -321,6 +321,133 @@ def compute_supertrend(
     )
 
 
+def compute_squeeze_momentum(
+    df: pd.DataFrame,
+    length: int = 20,
+    bb_mult: float = 2.0,
+    kc_mult: float = 1.5,
+) -> pd.DataFrame:
+    """
+    Squeeze Momentum Indicator [LazyBear] (Top #1 TradingView)
+    Bollinger Bands (length, bb_mult) vs Keltner Channels (length, kc_mult)
+    Linear Regression Momentum of Delta = Close - (MidDonchian + SMA)/2
+    """
+    close = df["close"]
+    high = df["high"]
+    low = df["low"]
+    n = len(df)
+
+    # 1. Bollinger Bands
+    basis = close.rolling(length, min_periods=length).mean()
+    dev = close.rolling(length, min_periods=length).std(ddof=0)
+    bb_upper = basis + bb_mult * dev
+    bb_lower = basis - bb_mult * dev
+
+    # 2. Keltner Channels using True Range
+    prev_close = close.shift(1).fillna(close)
+    tr = np.maximum(
+        high - low,
+        np.maximum(
+            (high - prev_close).abs(),
+            (low - prev_close).abs()
+        )
+    )
+    tr_ma = pd.Series(tr, index=df.index).rolling(length, min_periods=length).mean()
+    kc_upper = basis + kc_mult * tr_ma
+    kc_lower = basis - kc_mult * tr_ma
+
+    # Squeeze On: BB is inside KC
+    squeeze_on = (bb_lower > kc_lower) & (bb_upper < kc_upper)
+
+    # 3. Linear Regression Momentum
+    highest_high = high.rolling(length, min_periods=length).max()
+    lowest_low = low.rolling(length, min_periods=length).min()
+    donchian_mid = (highest_high + lowest_low) / 2.0
+    delta = close - (donchian_mid + basis) / 2.0
+
+    # Weights for rolling linear regression endpoint:
+    # linreg_val = intercept + slope * (length - 1)
+    x = np.arange(length)
+    sum_x = float(x.sum())
+    sum_x2 = float((x ** 2).sum())
+    denom = length * sum_x2 - sum_x ** 2
+    weights = (1.0 / length) + ((length * x - sum_x) * (length - 1) / (2.0 * denom))
+
+    delta_vals = delta.fillna(0).to_numpy(dtype=float)
+    mom_vals = np.zeros(n, dtype=float)
+    for i in range(length - 1, n):
+        mom_vals[i] = np.dot(weights, delta_vals[i - length + 1 : i + 1])
+
+    mom_series = pd.Series(mom_vals, index=df.index)
+    mom_prev = mom_series.shift(1).fillna(0)
+
+    # Color states:
+    # 1: mom > 0 and rising (Strong Bull)
+    # 2: mom > 0 and falling (Weakening Bull)
+    # 3: mom < 0 and falling (Strong Bear)
+    # 4: mom < 0 and rising (Weakening Bear)
+    color_state = np.where(
+        mom_series > 0,
+        np.where(mom_series >= mom_prev, 1, 2),
+        np.where(mom_series <= mom_prev, 3, 4)
+    )
+
+    sqz_arr = squeeze_on.to_numpy(dtype=bool)
+    sqz_prev = np.roll(sqz_arr, 1)
+    sqz_prev[0] = False
+    sqz_fired = sqz_prev & (~sqz_arr)
+
+    return pd.DataFrame(
+        {
+            "sqz_mom": mom_series,
+            "sqz_on": sqz_arr,
+            "sqz_fired": sqz_fired,
+            "sqz_color": color_state,
+        },
+        index=df.index,
+    )
+
+
+def compute_wavetrend(
+    df: pd.DataFrame,
+    chlen: int = 10,
+    avglen: int = 21,
+    smalen: int = 4,
+) -> pd.DataFrame:
+    """
+    WaveTrend Oscillator [LazyBear] (Top #3 TradingView)
+    ap = (high + low + close) / 3
+    esa = EMA(ap, chlen)
+    d = EMA(abs(ap - esa), chlen)
+    ci = (ap - esa) / (0.015 * d)
+    wt1 = EMA(ci, avglen)
+    wt2 = SMA(wt1, smalen)
+    """
+    ap = (df["high"] + df["low"] + df["close"]) / 3.0
+    esa = ap.ewm(span=chlen, adjust=False).mean()
+    d = (ap - esa).abs().ewm(span=chlen, adjust=False).mean()
+    d_clean = d.replace(0, 1e-9)
+    ci = (ap - esa) / (0.015 * d_clean)
+    wt1 = ci.ewm(span=avglen, adjust=False).mean()
+    wt2 = wt1.rolling(smalen, min_periods=smalen).mean()
+
+    prev_wt1 = wt1.shift(1)
+    prev_wt2 = wt2.shift(1)
+
+    wt_buy = (prev_wt1 <= prev_wt2) & (wt1 > wt2) & (wt1 <= -50)
+    wt_sell = (prev_wt1 >= prev_wt2) & (wt1 < wt2) & (wt1 >= 50)
+
+    return pd.DataFrame(
+        {
+            "wt1": wt1,
+            "wt2": wt2,
+            "wt_buy": wt_buy.fillna(False),
+            "wt_sell": wt_sell.fillna(False),
+        },
+        index=df.index,
+    )
+
+
 def attach_all_indicators(
     df: pd.DataFrame,
     macd_fast: int = 12,
@@ -332,6 +459,9 @@ def attach_all_indicators(
     ww_below_zero: bool = False,
     st_period: int = 10,
     st_mult: float = 3.0,
+    sqz_length: int = 20,
+    wt_chlen: int = 10,
+    wt_avglen: int = 21,
 ) -> pd.DataFrame:
     """Compute and concatenate all indicators onto a copy of df."""
     res = df.copy().reset_index(drop=True)
@@ -339,4 +469,6 @@ def attach_all_indicators(
     a = compute_adx_di_beikabu(res, adx_length)
     w = compute_weis_wave_volume(res, ww_trend_len, ww_below_zero)
     st = compute_supertrend(res, st_period, st_mult)
-    return pd.concat([res, m, a, w, st], axis=1)
+    sqz = compute_squeeze_momentum(res, sqz_length)
+    wt = compute_wavetrend(res, wt_chlen, wt_avglen)
+    return pd.concat([res, m, a, w, st, sqz, wt], axis=1)

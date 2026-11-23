@@ -52,11 +52,16 @@ class BacktestRequest(BaseModel):
     ww_trend_len: int = Field(default=2, ge=1)
     st_period: int = Field(default=10, ge=1)
     st_mult: float = Field(default=3.0, ge=0.5)
+    sqz_length: int = Field(default=20, ge=5)
+    wt_chlen: int = Field(default=10, ge=2)
+    wt_avglen: int = Field(default=21, ge=2)
 
     use_macd: bool = Field(default=True)
     use_adx: bool = Field(default=True)
     use_weis_wave: bool = Field(default=True)
     use_supertrend: bool = Field(default=False)
+    use_squeeze: bool = Field(default=False)
+    use_wavetrend: bool = Field(default=False)
     exit_mode: str = Field(default="macd_or_di")
 
     stop_loss_pct: float = Field(default=0.07, ge=0, le=0.5)
@@ -227,10 +232,15 @@ def post_backtest(req: BacktestRequest):
             ww_trend_len=req.ww_trend_len,
             st_period=req.st_period,
             st_mult=req.st_mult,
+            sqz_length=req.sqz_length,
+            wt_chlen=req.wt_chlen,
+            wt_avglen=req.wt_avglen,
             use_macd=req.use_macd,
             use_adx=req.use_adx,
             use_weis_wave=req.use_weis_wave,
             use_supertrend=req.use_supertrend,
+            use_squeeze=req.use_squeeze,
+            use_wavetrend=req.use_wavetrend,
             exit_mode=req.exit_mode,
             stop_loss_pct=req.stop_loss_pct,
             take_profit_pct=req.take_profit_pct,

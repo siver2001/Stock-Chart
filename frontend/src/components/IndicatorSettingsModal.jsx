@@ -49,6 +49,8 @@ export default function IndicatorSettingsModal({
     if (indName === 'ICHIMOKU') return [9, 26, 52]
     if (indName === 'MFI') return [14]
     if (indName === 'VWAP') return [1, 2]
+    if (indName === 'SQUEEZE_MOMENTUM') return [20, 2.0, 1.5]
+    if (indName === 'WAVETREND') return [10, 21]
     return []
   })
 
@@ -123,6 +125,10 @@ export default function IndicatorSettingsModal({
       setCalcParams([14])
     } else if (indName === 'VWAP') {
       setCalcParams([1, 2])
+    } else if (indName === 'SQUEEZE_MOMENTUM') {
+      setCalcParams([20, 2.0, 1.5])
+    } else if (indName === 'WAVETREND') {
+      setCalcParams([10, 21])
     }
   }
 
@@ -187,6 +193,8 @@ export default function IndicatorSettingsModal({
       case 'VWAP': return 'Giá bình quân khối lượng (VWAP)'
       case 'MFI': return 'Chỉ số dòng tiền (Money Flow Index)'
       case 'OBV': return 'Chỉ số khối lượng cân bằng (OBV)'
+      case 'SQUEEZE_MOMENTUM': return 'Squeeze Momentum Indicator [LazyBear] (Top 1 TV)'
+      case 'WAVETREND': return 'WaveTrend Oscillator [LazyBear] (Top 3 TV)'
       default: return `Chỉ báo ${indName}`
     }
   }
@@ -726,6 +734,26 @@ export default function IndicatorSettingsModal({
                 {indName === 'MFI' && (
                   <div>
                     <strong>MFI (Chỉ số dòng tiền):</strong> Kết hợp Giá và Khối lượng để phát hiện phân kỳ dòng tiền. MFI &gt; 80 là vùng Quá mua, MFI &lt; 20 là vùng Quá bán tích lũy.
+                  </div>
+                )}
+                {indName === 'SQUEEZE_MOMENTUM' && (
+                  <div>
+                    <strong>Squeeze Momentum Indicator [LazyBear] (Top #1 TradingView):</strong>
+                    <ul style={{ paddingLeft: '20px', marginTop: '6px', listStyleType: 'disc' }}>
+                      <li><strong>Chấm Đỏ giữa trục 0:</strong> Trạng thái Nén chặt (Squeeze ON) - Bollinger Bands nằm trong Keltner Channels, cổ phiếu đang gom hàng nén biên độ.</li>
+                      <li><strong>Chấm Xanh lá giữa trục 0:</strong> Trạng thái Bung nén (Squeeze FIRED) - Giải phóng năng lượng tích lũy, bắt đầu pha bùng nổ theo xu hướng.</li>
+                      <li><strong>Cột Xanh ngọc (#00e676):</strong> Động lượng TĂNG mạnh mẽ.</li>
+                      <li><strong>Cột Đỏ (#ff1744):</strong> Động lượng GIẢM mạnh mẽ.</li>
+                    </ul>
+                  </div>
+                )}
+                {indName === 'WAVETREND' && (
+                  <div>
+                    <strong>WaveTrend Oscillator [LazyBear] (Top #3 TradingView):</strong>
+                    <ul style={{ paddingLeft: '20px', marginTop: '6px', listStyleType: 'disc' }}>
+                      <li><strong>WT1 cắt lên WT2 tại vùng &lt; -50:</strong> Tín hiệu Mua đảo chiều chân sóng (Golden Cross Quá Bán).</li>
+                      <li><strong>WT1 cắt xuống WT2 tại vùng &gt; +50:</strong> Tín hiệu Bán chốt lời vùng đỉnh (Death Cross Quá Mua).</li>
+                    </ul>
                   </div>
                 )}
               </div>

@@ -41,13 +41,18 @@ class BacktestConfig:
     ww_trend_len: int = 2
     st_period: int = 10
     st_mult: float = 3.0
+    sqz_length: int = 20
+    wt_chlen: int = 10
+    wt_avglen: int = 21
 
     # Strategy toggles
     use_macd: bool = True
     use_adx: bool = True
     use_weis_wave: bool = True
     use_supertrend: bool = False
-    exit_mode: str = "macd_or_di"           # "macd_cross", "macd_or_di", "any_bearish", "supertrend"
+    use_squeeze: bool = False
+    use_wavetrend: bool = False
+    exit_mode: str = "macd_or_di"           # "macd_cross", "macd_or_di", "any_bearish", "supertrend", "squeeze", "wavetrend"
 
     # Risk management (0 = disabled)
     stop_loss_pct: float = 0.07             # 7% cắt lỗ
@@ -68,6 +73,9 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         ww_trend_len=config.ww_trend_len,
         st_period=config.st_period,
         st_mult=config.st_mult,
+        sqz_length=config.sqz_length,
+        wt_chlen=config.wt_chlen,
+        wt_avglen=config.wt_avglen,
     )
 
     n = len(df)
@@ -87,6 +95,10 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
     st_trend = df["st_trend"].to_numpy(dtype=int)
     st_buy = df["st_buy"].to_numpy(dtype=bool)
     st_sell = df["st_sell"].to_numpy(dtype=bool)
+    sqz_mom = df["sqz_mom"].to_numpy(dtype=float)
+    sqz_color = df["sqz_color"].to_numpy(dtype=int)
+    wt1 = df["wt1"].to_numpy(dtype=float)
+    wt2 = df["wt2"].to_numpy(dtype=float)
 
     cash = float(config.initial_capital)
     shares = 0
@@ -102,7 +114,7 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
     trades: List[Dict[str, Any]] = []
     equity_curve: List[Dict[str, Any]] = []
 
-    warmup = max(config.macd_slow + config.macd_signal, config.adx_length * 2, 35)
+    warmup = max(config.macd_slow + config.macd_signal, config.adx_length * 2, config.sqz_length + 5, 35)
     min_hold_bars = 2 if config.enforce_t_plus_2 else 0
 
     def _execute_buy(bar_idx: int, raw_price: float):
@@ -208,10 +220,16 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         cond_adx_bull = (di_plus[i] > di_minus[i]) and (adx[i] >= config.adx_threshold)
         cond_ww_bull = (ww_wave[i] == 1)
         cond_st_bull = (st_trend[i] == 1)
+        cond_sqz_bull = (sqz_mom[i] > 0) and (sqz_color[i] == 1)
+        cond_wt_bull = (wt1[i] > wt2[i]) and (wt1[i] <= 0)
 
         buy_signal = True
         if config.use_supertrend:
             buy_signal = buy_signal and cond_st_bull
+        if config.use_squeeze:
+            buy_signal = buy_signal and cond_sqz_bull
+        if config.use_wavetrend:
+            buy_signal = buy_signal and cond_wt_bull
         if config.use_macd:
             buy_signal = buy_signal and cond_macd_bull
         if config.use_adx:
@@ -224,6 +242,8 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         di_bear = di_minus[i] > di_plus[i]
         ww_bear = ww_wave[i] == -1
         st_bear = st_trend[i] == -1
+        sqz_bear = (sqz_mom[i] < 0) or (sqz_color[i] == 2 and sqz_mom[i] > 0)
+        wt_bear = (wt1[i] < wt2[i]) and (wt1[i] >= 40)
 
         sell_signal = False
         sell_reason = ""
@@ -232,12 +252,26 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
                 sell_signal, sell_reason = True, "SuperTrend Bearish (Đảo chiều)"
             elif config.use_macd and macd_bear:
                 sell_signal, sell_reason = True, "MACD Bearish Cross"
+        elif config.exit_mode == "squeeze":
+            if sqz_bear:
+                sell_signal, sell_reason = True, "Squeeze Momentum Bearish (Suy yếu)"
+            elif config.use_macd and macd_bear:
+                sell_signal, sell_reason = True, "MACD Bearish Cross"
+        elif config.exit_mode == "wavetrend":
+            if wt_bear:
+                sell_signal, sell_reason = True, "WaveTrend Death Cross (Quá mua)"
+            elif config.use_macd and macd_bear:
+                sell_signal, sell_reason = True, "MACD Bearish Cross"
         elif config.exit_mode == "macd_cross":
             if macd_bear:
                 sell_signal, sell_reason = True, "MACD Bearish Cross"
         elif config.exit_mode == "any_bearish":
             if st_bear and config.use_supertrend:
                 sell_signal, sell_reason = True, "SuperTrend Bearish"
+            elif sqz_bear and config.use_squeeze:
+                sell_signal, sell_reason = True, "Squeeze Momentum Bearish"
+            elif wt_bear and config.use_wavetrend:
+                sell_signal, sell_reason = True, "WaveTrend Death Cross"
             elif macd_bear:
                 sell_signal, sell_reason = True, "MACD Bearish"
             elif di_bear:
@@ -247,6 +281,10 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         else:  # macd_or_di (balanced default)
             if st_bear and config.use_supertrend:
                 sell_signal, sell_reason = True, "SuperTrend Bearish"
+            elif sqz_bear and config.use_squeeze:
+                sell_signal, sell_reason = True, "Squeeze Momentum Bearish"
+            elif wt_bear and config.use_wavetrend:
+                sell_signal, sell_reason = True, "WaveTrend Death Cross"
             elif macd_bear:
                 sell_signal, sell_reason = True, "MACD Bearish Cross"
             elif di_bear:

@@ -74,8 +74,13 @@ export default function BottomBacktestDock({
     use_adx: true,
     use_weis_wave: true,
     use_supertrend: false,
+    use_squeeze: false,
+    use_wavetrend: false,
     st_period: 10,
     st_mult: 3.0,
+    sqz_length: 20,
+    wt_chlen: 10,
+    wt_avglen: 21,
   })
 
   const [loading, setLoading] = useState(false)
@@ -96,10 +101,46 @@ export default function BottomBacktestDock({
   }
 
   const applyPreset = (presetType) => {
-    if (presetType === 'supertrend_pure') {
+    if (presetType === 'squeeze_pure') {
+      setForm((prev) => ({
+        ...prev,
+        use_squeeze: true,
+        use_supertrend: false,
+        use_wavetrend: false,
+        use_macd: false,
+        use_adx: false,
+        use_weis_wave: false,
+        sqz_length: 20,
+        exit_mode: 'squeeze',
+      }))
+    } else if (presetType === 'wavetrend_pure') {
+      setForm((prev) => ({
+        ...prev,
+        use_wavetrend: true,
+        use_squeeze: false,
+        use_supertrend: false,
+        use_macd: false,
+        use_adx: false,
+        use_weis_wave: false,
+        exit_mode: 'wavetrend',
+      }))
+    } else if (presetType === 'squeeze_supertrend') {
+      setForm((prev) => ({
+        ...prev,
+        use_squeeze: true,
+        use_supertrend: true,
+        use_wavetrend: false,
+        use_macd: false,
+        use_adx: false,
+        use_weis_wave: false,
+        exit_mode: 'supertrend',
+      }))
+    } else if (presetType === 'supertrend_pure') {
       setForm((prev) => ({
         ...prev,
         use_supertrend: true,
+        use_squeeze: false,
+        use_wavetrend: false,
         use_macd: false,
         use_adx: false,
         use_weis_wave: false,
@@ -112,6 +153,8 @@ export default function BottomBacktestDock({
         ...prev,
         use_supertrend: true,
         use_macd: true,
+        use_squeeze: false,
+        use_wavetrend: false,
         use_adx: false,
         use_weis_wave: false,
         st_period: 10,
@@ -122,6 +165,8 @@ export default function BottomBacktestDock({
       setForm((prev) => ({
         ...prev,
         use_supertrend: false,
+        use_squeeze: false,
+        use_wavetrend: false,
         use_macd: true,
         use_adx: true,
         use_weis_wave: true,
@@ -141,6 +186,9 @@ export default function BottomBacktestDock({
         adx_threshold: Number(form.adx_threshold),
         st_period: Number(form.st_period) || 10,
         st_mult: Number(form.st_mult) || 3.0,
+        sqz_length: Number(form.sqz_length) || 20,
+        wt_chlen: Number(form.wt_chlen) || 10,
+        wt_avglen: Number(form.wt_avglen) || 21,
         stop_loss_pct: Number(form.stop_loss_pct) / 100,
         take_profit_pct: Number(form.take_profit_pct) / 100,
       }
@@ -409,26 +457,42 @@ export default function BottomBacktestDock({
               <button
                 type="button"
                 className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#f59e0b' }}
+                onClick={() => applyPreset('squeeze_pure')}
+              >
+                ★ 1. Squeeze Mom (Top 1 TV)
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#00e676' }}
+                onClick={() => applyPreset('wavetrend_pure')}
+              >
+                ★ 2. WaveTrend (Top 3 TV)
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#38bdf8' }}
+                onClick={() => applyPreset('squeeze_supertrend')}
+              >
+                ★ 3. Squeeze + SuperTrend
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer' }}
+                onClick={() => applyPreset('supertrend_pure')}
+              >
+                4. SuperTrend Thuần Túy
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
                 style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer' }}
                 onClick={() => applyPreset('combo_classic')}
               >
-                1. Combo MACD + ADX + Weis Wave
-              </button>
-              <button
-                type="button"
-                className="tv-btn-ghost"
-                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#58a6ff' }}
-                onClick={() => applyPreset('supertrend_macd')}
-              >
-                2. SuperTrend + CM MACD
-              </button>
-              <button
-                type="button"
-                className="tv-btn-ghost"
-                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#089981' }}
-                onClick={() => applyPreset('supertrend_pure')}
-              >
-                3. SuperTrend Thuần Túy (ATR 10, 3.0)
+                5. Combo MACD + ADX
               </button>
             </div>
 
@@ -482,6 +546,8 @@ export default function BottomBacktestDock({
                 <label>Chế độ thoát lệnh</label>
                 <select value={form.exit_mode} onChange={(e) => handleChange('exit_mode', e.target.value)}>
                   <option value="macd_or_di">Cân bằng: MACD cắt xuống hoặc DI- &gt; DI+</option>
+                  <option value="squeeze">Squeeze Momentum: Bán khi động lượng suy yếu</option>
+                  <option value="wavetrend">WaveTrend: Bán khi Death Cross vùng quá mua</option>
                   <option value="supertrend">SuperTrend: Bán khi dải chuyển sang Đỏ</option>
                   <option value="macd_cross">Bảo thủ: Chỉ khi MACD cắt xuống Signal</option>
                   <option value="any_bearish">Nhạy bén: Bất kỳ chỉ báo nào đảo chiều</option>
@@ -538,6 +604,22 @@ export default function BottomBacktestDock({
                     onChange={(e) => handleChange('enforce_t_plus_2', e.target.checked)}
                   />
                   <span>Áp dụng quy định T+2.5 TTCK VN</span>
+                </label>
+                <label className="tv-chk-label">
+                  <input
+                    type="checkbox"
+                    checked={form.use_squeeze}
+                    onChange={(e) => handleChange('use_squeeze', e.target.checked)}
+                  />
+                  <span>Dùng Squeeze Momentum [LazyBear] (Top 1 TV)</span>
+                </label>
+                <label className="tv-chk-label">
+                  <input
+                    type="checkbox"
+                    checked={form.use_wavetrend}
+                    onChange={(e) => handleChange('use_wavetrend', e.target.checked)}
+                  />
+                  <span>Dùng WaveTrend Oscillator [LazyBear] (Top 3 TV)</span>
                 </label>
                 <label className="tv-chk-label">
                   <input
