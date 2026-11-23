@@ -15,6 +15,28 @@ export class VNStockDatafeed {
   constructor(onDataOriginChange) {
     this.onDataOriginChange = onDataOriginChange
     this._subscribers = new Map()
+    // In-memory cache: key -> { timestamp, bars, origin }
+    this._cache = new Map()
+    // In-flight deduplication: key -> Promise
+    this._inflight = new Map()
+  }
+
+  getCacheKey(symbol, period) {
+    const interval = mapPeriodToInterval(period)
+    const ticker = (symbol?.ticker || symbol || 'VNINDEX').toUpperCase()
+    return `${ticker}_${interval}`
+  }
+
+  getCachedData(symbol, period) {
+    const key = this.getCacheKey(symbol, period)
+    const item = this._cache.get(key)
+    if (!item) return null
+    const isDaily = key.endsWith('1D') || key.endsWith('1W') || key.endsWith('1M')
+    const ttl = isDaily ? 180000 : 30000 // 3 min for daily, 30s for intraday
+    if (Date.now() - item.timestamp < ttl) {
+      return item.bars
+    }
+    return null
   }
 
   async searchSymbols(search = '') {
@@ -37,61 +59,126 @@ export class VNStockDatafeed {
 
   async getHistoryKLineData(symbol, period, from, to) {
     const interval = mapPeriodToInterval(period)
-    const ticker = symbol?.ticker || symbol || 'VNINDEX'
+    const ticker = (symbol?.ticker || symbol || 'VNINDEX').toUpperCase()
+    const key = `${ticker}_${interval}`
 
-    try {
-      const historyBars = await fetchHistory({
-        symbol: ticker,
-        interval,
-        from,
-        to,
-      })
-
-      if (this.onDataOriginChange) {
-        this.onDataOriginChange('VND / vnstock', ticker)
+    // 1. Instant cache hit check (nếu không có from/to đặc biệt)
+    if (!from && !to) {
+      const cached = this.getCachedData(symbol, period)
+      if (cached && cached.length > 0) {
+        if (this.onDataOriginChange) {
+          const item = this._cache.get(key)
+          this.onDataOriginChange(item?.origin || 'cache', ticker)
+        }
+        return cached
       }
-
-      if (historyBars && historyBars.length > 0) {
-        return historyBars.map((bar) => ({
-          timestamp: Number(bar.timestamp),
-          open: Number(bar.open),
-          high: Number(bar.high),
-          low: Number(bar.low),
-          close: Number(bar.close),
-          volume: Number(bar.volume),
-        }))
-      }
-    } catch {
-      // Fallback to fetchKLines
     }
 
-    const startDate = from ? new Date(from).toISOString().slice(0, 10) : '2023-01-01'
-    const endDate = to ? new Date(to).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
-
-    const res = await fetchKLines({
-      symbol: ticker,
-      interval,
-      startDate,
-      endDate,
-    })
-
-    if (this.onDataOriginChange) {
-      this.onDataOriginChange(res.data_origin || 'unknown', ticker)
+    // 2. In-flight request deduplication: nếu đang fetch dở cho cùng mã & khung, dùng lại promise
+    if (!from && !to && this._inflight.has(key)) {
+      return this._inflight.get(key)
     }
 
-    return (res.data || []).map((bar) => ({
-      timestamp: Number(bar.timestamp),
-      open: Number(bar.open),
-      high: Number(bar.high),
-      low: Number(bar.low),
-      close: Number(bar.close),
-      volume: Number(bar.volume),
-    }))
+    const fetchPromise = (async () => {
+      try {
+        let bars = null
+        let origin = 'VND / vnstock'
+
+        try {
+          const historyBars = await fetchHistory({
+            symbol: ticker,
+            interval,
+            from,
+            to,
+          })
+
+          if (historyBars && historyBars.length > 0) {
+            bars = historyBars.map((bar) => ({
+              timestamp: Number(bar.timestamp),
+              open: Number(bar.open),
+              high: Number(bar.high),
+              low: Number(bar.low),
+              close: Number(bar.close),
+              volume: Number(bar.volume),
+            }))
+          }
+        } catch {
+          // Fallback to fetchKLines
+        }
+
+        if (!bars || bars.length === 0) {
+          const startDate = from ? new Date(from).toISOString().slice(0, 10) : '2023-01-01'
+          const endDate = to ? new Date(to).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+
+          const res = await fetchKLines({
+            symbol: ticker,
+            interval,
+            startDate,
+            endDate,
+          })
+
+          origin = res.data_origin || 'unknown'
+          bars = (res.data || []).map((bar) => ({
+            timestamp: Number(bar.timestamp),
+            open: Number(bar.open),
+            high: Number(bar.high),
+            low: Number(bar.low),
+            close: Number(bar.close),
+            volume: Number(bar.volume),
+          }))
+        }
+
+        if (this.onDataOriginChange) {
+          this.onDataOriginChange(origin, ticker)
+        }
+
+        if (bars && bars.length > 0 && !from && !to) {
+          this._cache.set(key, {
+            timestamp: Date.now(),
+            bars,
+            origin,
+          })
+        }
+
+        return bars || []
+      } finally {
+        this._inflight.delete(key)
+      }
+    })()
+
+    if (!from && !to) {
+      this._inflight.set(key, fetchPromise)
+    }
+
+    return fetchPromise
+  }
+
+  // Pre-fetch watchlist symbols in the background during idle time
+  prefetchSymbols(symbols = [], period) {
+    if (!Array.isArray(symbols) || symbols.length === 0) return
+
+    let delay = 100
+    for (const sym of symbols) {
+      const ticker = (sym || '').toUpperCase().trim()
+      if (!ticker) continue
+      const key = this.getCacheKey(ticker, period)
+      // Bỏ qua nếu đã có sẵn trong cache
+      if (this._cache.has(key)) continue
+
+      setTimeout(() => {
+        // Chỉ nạp nếu vẫn chưa có
+        if (!this._cache.has(key)) {
+          this.getHistoryKLineData(ticker, period).catch(() => {})
+        }
+      }, delay)
+
+      delay += 120 // Giãn cách 120ms giữa mỗi request để không nghẽn mạng
+    }
   }
 
   subscribe(symbol, period, callback) {
     const interval = mapPeriodToInterval(period)
-    const ticker = symbol?.ticker || symbol || 'VNINDEX'
+    const ticker = (symbol?.ticker || symbol || 'VNINDEX').toUpperCase()
     const subKey = `${ticker}_${interval}`
 
     // Always clear ALL previous subscriptions so polling timers don't collide across symbols
@@ -123,7 +210,7 @@ export class VNStockDatafeed {
 
   unsubscribe(symbol, period) {
     const interval = mapPeriodToInterval(period)
-    const ticker = symbol?.ticker || symbol || 'VNINDEX'
+    const ticker = (symbol?.ticker || symbol || 'VNINDEX').toUpperCase()
     const subKey = `${ticker}_${interval}`
     if (this._subscribers.has(subKey)) {
       clearInterval(this._subscribers.get(subKey))

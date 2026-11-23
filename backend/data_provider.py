@@ -151,8 +151,8 @@ DEFAULT_VN_SYMBOLS: List[Dict[str, str]] = [
 
 # Simple in-memory TTL Cache: key -> (expire_ts, DataFrame)
 _CACHE: Dict[str, Tuple[float, pd.DataFrame]] = {}
-CACHE_TTL_DAILY = 5         # 5 seconds for real-time responsiveness
-CACHE_TTL_INTRADAY = 2      # 2 seconds for live intraday ticks
+CACHE_TTL_DAILY = 300        # 5 minutes for lightning-fast chart switching
+CACHE_TTL_INTRADAY = 30      # 30 seconds for live intraday ticks
 
 
 def _normalize_interval(interval: str) -> str:
@@ -556,8 +556,9 @@ def fetch_ohlcv(
         except Exception:
             to_ts = now_ts
     else:
-        # Bucket to_ts to 5s so repeated calls share cache key!
-        to_ts = (now_ts // 5) * 5
+        # Bucket to_ts (300s for daily/weekly/monthly, 30s for intraday) so repeated calls share cache key!
+        bucket = 300 if norm_interval in ("1D", "1W", "1M", "2D", "3D") else 30
+        to_ts = (now_ts // bucket) * bucket
 
     if start_date:
         try:

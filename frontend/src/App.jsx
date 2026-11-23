@@ -250,6 +250,8 @@ export default function App() {
   const [activeIndicators, setActiveIndicators] = useState([])
   const [hiddenIndicators, setHiddenIndicators] = useState([])
   const [latestBar, setLatestBar] = useState(null)
+  const [isChartLoading, setIsChartLoading] = useState(false)
+  const switchRequestIdRef = useRef(0)
 
   // Selected Overlay (Drawing) & Active Drawing Tool
   const [activeDrawingTool, setActiveDrawingTool] = useState('crosshair')
@@ -794,7 +796,6 @@ export default function App() {
     const loadData = async () => {
       const bars = await datafeed.getHistoryKLineData(activeSymbol, activePeriod)
       if (bars && bars.length > 0) {
-        resetChartScale(chart, true)
         chart.applyNewData(bars, false, () => {
           resetChartScale(chart, true)
           restoreDrawingsForSymbol(activeSymbol)
@@ -928,38 +929,51 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [showWatchlist, showBacktest])
 
-  // Switch Symbol
+  // Switch Symbol (Chuyển mã cổ phiếu siêu tốc, mượt mà chuẩn TradingView 60fps)
   const handleSelectSymbol = useCallback(async (sym) => {
     const ticker = sym.toUpperCase()
     if (!chartInstanceRef.current || !datafeedRef.current) return
+    if (ticker === activeSymbolRef.current) return
 
-    // 1. Tự động lưu bản vẽ của cổ phiếu hiện tại trước khi chuyển sang cổ phiếu mới
-    saveDrawingsForSymbol(activeSymbol)
+    const requestId = ++switchRequestIdRef.current
 
+    // 1. Tự động lưu bản vẽ của mã cổ phiếu hiện tại
+    saveDrawingsForSymbol(activeSymbolRef.current)
+
+    // 2. Ngắt polling thời gian thực của mã cũ
+    datafeedRef.current.unsubscribe(activeSymbolRef.current, activePeriodRef.current)
+
+    // 3. Cập nhật state active symbol
     setActiveSymbol(ticker)
-    datafeedRef.current.unsubscribe(activeSymbol, activePeriod)
+    activeSymbolRef.current = ticker
+
     const isNextIndex = ['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'].includes(ticker)
-    chartInstanceRef.current.setPriceVolumePrecision(isNextIndex ? 2 : 0, 0)
 
-    // 2. Xóa các hình vẽ cũ trên canvas của mã cũ
-    chartInstanceRef.current.removeOverlay()
-    setSelectedOverlay(null)
+    // 4. Chuẩn bị định dạng giá & mở khóa tính toán tự động thang đo Y cho mã mới
+    try {
+      chartInstanceRef.current.setPriceVolumePrecision(isNextIndex ? 2 : 0, 0)
+      chartInstanceRef.current.removeOverlay()
+      setSelectedOverlay(null)
 
-    // 3. Xóa dữ liệu cũ & reset toàn bộ auto-scale để KlineCharts tính lại thang đo giá Y-axis chuẩn xác cho mã mới
-    chartInstanceRef.current.clearData()
-    resetChartScale(chartInstanceRef.current, true)
+      const panes = typeof chartInstanceRef.current.getAllDrawPanes === 'function'
+        ? chartInstanceRef.current.getAllDrawPanes()
+        : (chartInstanceRef.current._drawPanes || [])
+      panes.forEach((p) => {
+        try { p?.getAxisComponent?.()?.setAutoCalcTickFlag(true) } catch {}
+      })
+    } catch {}
 
-    const bars = await datafeedRef.current.getHistoryKLineData(ticker, activePeriod)
-    if (bars && bars.length > 0) {
-      chartInstanceRef.current.applyNewData(bars, false, () => {
-        // Tự động căn chỉnh thang đo giá 100% chuẩn xác, zoom chuẩn 9px, lề phải 60px như TradingView
+    // 5. Nạp tức thì từ RAM Cache nếu đã có (0ms instant transition, không bao giờ nháy trắng)
+    const cachedBars = datafeedRef.current.getCachedData(ticker, activePeriodRef.current)
+    if (cachedBars && cachedBars.length > 0) {
+      chartInstanceRef.current.applyNewData(cachedBars, false, () => {
+        if (requestId !== switchRequestIdRef.current) return
         resetChartScale(chartInstanceRef.current, true)
-
-        // 4. Khôi phục lại toàn bộ hình vẽ đã lưu trước đó của mã mới!
         restoreDrawingsForSymbol(ticker)
       })
-      const last = bars[bars.length - 1]
-      const prev = bars.length >= 2 ? bars[bars.length - 2] : null
+
+      const last = cachedBars[cachedBars.length - 1]
+      const prev = cachedBars.length >= 2 ? cachedBars[cachedBars.length - 2] : null
       const ref = prev ? prev.close : last.open
       const diff = last.close - ref
       const pct = ref ? (diff / ref) * 100 : 0
@@ -969,11 +983,48 @@ export default function App() {
         change: diff,
         pct_change: pct,
       })
+    } else {
+      setIsChartLoading(true)
     }
-    datafeedRef.current.subscribe(ticker, activePeriod, (bar) => {
+
+    // 6. Tải dữ liệu lịch sử chuẩn xác
+    try {
+      const bars = await datafeedRef.current.getHistoryKLineData(ticker, activePeriodRef.current)
+      if (requestId !== switchRequestIdRef.current) return
+
+      if (bars && bars.length > 0) {
+        if (!cachedBars || cachedBars.length !== bars.length) {
+          chartInstanceRef.current.applyNewData(bars, false, () => {
+            if (requestId !== switchRequestIdRef.current) return
+            resetChartScale(chartInstanceRef.current, true)
+            restoreDrawingsForSymbol(ticker)
+          })
+
+          const last = bars[bars.length - 1]
+          const prev = bars.length >= 2 ? bars[bars.length - 2] : null
+          const ref = prev ? prev.close : last.open
+          const diff = last.close - ref
+          const pct = ref ? (diff / ref) * 100 : 0
+          setLatestBar({
+            ...last,
+            ref_price: ref,
+            change: diff,
+            pct_change: pct,
+          })
+        }
+      }
+    } finally {
+      if (requestId === switchRequestIdRef.current) {
+        setIsChartLoading(false)
+      }
+    }
+
+    // 7. Kết nối polling thời gian thực cho mã mới
+    datafeedRef.current.subscribe(ticker, activePeriodRef.current, (bar) => {
+      if (requestId !== switchRequestIdRef.current) return
       chartInstanceRef.current.updateData(bar)
       setLatestBar((prev) => {
-        const ref = bar.ref_price || prev?.ref_price || (bars.length >= 2 ? bars[bars.length - 2].close : bar.open)
+        const ref = bar.ref_price || prev?.ref_price || bar.open
         const diff = bar.close - ref
         const pct = ref ? (diff / ref) * 100 : 0
         return {
@@ -984,33 +1035,40 @@ export default function App() {
         }
       })
     })
-  }, [activePeriod, activeSymbol, saveDrawingsForSymbol, restoreDrawingsForSymbol])
+  }, [saveDrawingsForSymbol, restoreDrawingsForSymbol])
 
-  // Switch Period
+  // Switch Period (Chuyển khung thời gian mượt mà, không khựng)
   const handlePeriodChange = useCallback(async (period) => {
     setActivePeriod(period)
+    activePeriodRef.current = period
     localStorage.setItem(STORAGE_KEYS.LAST_PERIOD, JSON.stringify(period))
     if (!chartInstanceRef.current || !datafeedRef.current) return
 
-    // Lưu lại hình vẽ hiện tại
-    saveDrawingsForSymbol(activeSymbol)
+    const requestId = ++switchRequestIdRef.current
 
-    datafeedRef.current.unsubscribe(activeSymbol, activePeriod)
-    chartInstanceRef.current.removeOverlay()
-    setSelectedOverlay(null)
-    chartInstanceRef.current.clearData()
-    resetChartScale(chartInstanceRef.current, true)
+    saveDrawingsForSymbol(activeSymbolRef.current)
+    datafeedRef.current.unsubscribe(activeSymbolRef.current, activePeriodRef.current)
 
-    const bars = await datafeedRef.current.getHistoryKLineData(activeSymbol, period)
-    if (bars && bars.length > 0) {
-      chartInstanceRef.current.applyNewData(bars, false, () => {
-        resetChartScale(chartInstanceRef.current, true)
-
-        // Khôi phục hình vẽ trên khung thời gian mới
-        restoreDrawingsForSymbol(activeSymbol)
+    try {
+      chartInstanceRef.current.removeOverlay()
+      setSelectedOverlay(null)
+      const panes = typeof chartInstanceRef.current.getAllDrawPanes === 'function'
+        ? chartInstanceRef.current.getAllDrawPanes()
+        : (chartInstanceRef.current._drawPanes || [])
+      panes.forEach((p) => {
+        try { p?.getAxisComponent?.()?.setAutoCalcTickFlag(true) } catch {}
       })
-      const last = bars[bars.length - 1]
-      const prev = bars.length >= 2 ? bars[bars.length - 2] : null
+    } catch {}
+
+    const cachedBars = datafeedRef.current.getCachedData(activeSymbolRef.current, period)
+    if (cachedBars && cachedBars.length > 0) {
+      chartInstanceRef.current.applyNewData(cachedBars, false, () => {
+        if (requestId !== switchRequestIdRef.current) return
+        resetChartScale(chartInstanceRef.current, true)
+        restoreDrawingsForSymbol(activeSymbolRef.current)
+      })
+      const last = cachedBars[cachedBars.length - 1]
+      const prev = cachedBars.length >= 2 ? cachedBars[cachedBars.length - 2] : null
       const ref = prev ? prev.close : last.open
       const diff = last.close - ref
       const pct = ref ? (diff / ref) * 100 : 0
@@ -1020,11 +1078,45 @@ export default function App() {
         change: diff,
         pct_change: pct,
       })
+    } else {
+      setIsChartLoading(true)
     }
-    datafeedRef.current.subscribe(activeSymbol, period, (bar) => {
+
+    try {
+      const bars = await datafeedRef.current.getHistoryKLineData(activeSymbolRef.current, period)
+      if (requestId !== switchRequestIdRef.current) return
+
+      if (bars && bars.length > 0) {
+        if (!cachedBars || cachedBars.length !== bars.length) {
+          chartInstanceRef.current.applyNewData(bars, false, () => {
+            if (requestId !== switchRequestIdRef.current) return
+            resetChartScale(chartInstanceRef.current, true)
+            restoreDrawingsForSymbol(activeSymbolRef.current)
+          })
+          const last = bars[bars.length - 1]
+          const prev = bars.length >= 2 ? bars[bars.length - 2] : null
+          const ref = prev ? prev.close : last.open
+          const diff = last.close - ref
+          const pct = ref ? (diff / ref) * 100 : 0
+          setLatestBar({
+            ...last,
+            ref_price: ref,
+            change: diff,
+            pct_change: pct,
+          })
+        }
+      }
+    } finally {
+      if (requestId === switchRequestIdRef.current) {
+        setIsChartLoading(false)
+      }
+    }
+
+    datafeedRef.current.subscribe(activeSymbolRef.current, period, (bar) => {
+      if (requestId !== switchRequestIdRef.current) return
       chartInstanceRef.current.updateData(bar)
       setLatestBar((prev) => {
-        const ref = bar.ref_price || prev?.ref_price || (bars.length >= 2 ? bars[bars.length - 2].close : bar.open)
+        const ref = bar.ref_price || prev?.ref_price || bar.open
         const diff = bar.close - ref
         const pct = ref ? (diff / ref) * 100 : 0
         return {
@@ -1035,7 +1127,28 @@ export default function App() {
         }
       })
     })
-  }, [activeSymbol, activePeriod, saveDrawingsForSymbol, restoreDrawingsForSymbol])
+  }, [saveDrawingsForSymbol, restoreDrawingsForSymbol])
+
+  // Background pre-cache watchlist symbols for instant 0ms switching
+  useEffect(() => {
+    if (!datafeedRef.current) return
+    let symbolsToPreload = ['VNINDEX', 'VN30', 'FPT', 'HPG', 'VCB', 'SSI', 'MWG', 'TCB']
+    try {
+      const saved = localStorage.getItem('vn_watchlist_symbols')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          symbolsToPreload = parsed
+        }
+      }
+    } catch {}
+
+    const timer = setTimeout(() => {
+      datafeedRef.current?.prefetchSymbols?.(symbolsToPreload, activePeriodRef.current)
+    }, 600)
+
+    return () => clearTimeout(timer)
+  }, [activePeriod])
 
   // Switch Chart Type (Candles, Hollow, Bars OHLC, Area)
   const handleChartTypeChange = (type) => {
@@ -1430,6 +1543,9 @@ export default function App() {
             onUpdateStyle={handleUpdateOverlayStyle}
             onToggleLock={handleToggleOverlayLock}
           />
+
+          {/* Top Seamless Loading Bar */}
+          {isChartLoading && <div className="tv-chart-top-loader" />}
 
           {/* KlineCharts Mount Element */}
           <div ref={chartElRef} className="tv-klinechart-dom" />

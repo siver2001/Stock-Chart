@@ -1027,6 +1027,29 @@ body.theme-light .tv-ind-pill {
   box-shadow: 0 0 10px rgba(41, 98, 255, 0.6) !important;
 }
 
+/* TradingView Seamless Loading Bar at Top of Chart */
+.tv-chart-top-loader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background: linear-gradient(90deg, #2962ff, #00e676, #2962ff);
+  background-size: 200% 100%;
+  animation: tv-loader-slide 0.85s linear infinite;
+  z-index: 50;
+  box-shadow: 0 0 8px rgba(41, 98, 255, 0.6);
+}
+
+@keyframes tv-loader-slide {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 /* TradingView Floating Auto-Scale (Auto-Fit) Button */
 .tv-auto-scale-btn {
   position: absolute;
