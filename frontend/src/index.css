@@ -1266,78 +1266,259 @@ body.theme-light .tv-auto-scale-btn:hover {
 }
 
 /* ==========================================================================
-   3. RIGHT SIDEBAR: TRADINGVIEW WATCHLIST
+   3. RIGHT SIDEBAR: TRADINGVIEW WATCHLIST (100% Fidelity)
    ========================================================================== */
 .tv-watchlist-drawer {
-  width: 310px;
-  background-color: #1e222d;
+  width: 325px;
+  background-color: #131722;
   border-left: 1px solid #2a2e39;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   z-index: 15;
   user-select: none;
+  transition: width 0.2s ease;
+}
+.tv-watchlist-drawer.tv-wl-expanded {
+  width: 420px;
 }
 body.theme-light .tv-watchlist-drawer {
-  background-color: #f8f9fd;
+  background-color: #ffffff;
   border-left-color: #e0e3eb;
 }
 
+/* 1. Header Toolbar */
 .tv-watchlist-header {
-  height: 40px;
-  padding: 0 12px;
+  height: 42px;
+  padding: 0 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid #2a2e39;
+  position: relative;
 }
 body.theme-light .tv-watchlist-header {
   border-bottom-color: #e0e3eb;
 }
 
-.tv-watchlist-title {
+.tv-wl-title-wrap {
+  position: relative;
+}
+
+.tv-wl-dropdown-trigger {
+  background: transparent;
+  border: none;
+  color: #f0f3fa;
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+body.theme-light .tv-wl-dropdown-trigger {
+  color: #131722;
+}
+.tv-wl-dropdown-trigger:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+body.theme-light .tv-wl-dropdown-trigger:hover {
+  background-color: #f0f3fa;
+}
+
+.tv-wl-title-text {
+  font-size: 13.5px;
   font-weight: 700;
+  letter-spacing: -0.2px;
 }
 
-.tv-live-sync-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.tv-wl-chevron {
+  color: #787b86;
+  transition: transform 0.15s ease;
+}
+.tv-wl-chevron.open {
+  transform: rotate(180deg);
+}
+
+/* Preset Dropdown Menu */
+.tv-wl-preset-dropdown {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  z-index: 120;
+  background-color: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
+  width: 220px;
+  padding: 6px 0;
+}
+body.theme-light .tv-wl-preset-dropdown {
+  background-color: #ffffff;
+  border-color: #e0e3eb;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+}
+
+.tv-wl-dropdown-header {
   font-size: 10px;
-  font-weight: 600;
-  color: #089981;
-  background: rgba(8, 153, 129, 0.15);
-  padding: 2px 6px;
-  border-radius: 9999px;
-  margin-left: 6px;
-  border: 1px solid rgba(8, 153, 129, 0.3);
+  font-weight: 700;
+  color: #787b86;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 12px 6px;
 }
 
-.tv-live-sync-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: #089981;
-  animation: tvSyncPulse 1.5s infinite;
+.tv-wl-preset-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  background: transparent;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: #d1d4dc;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+body.theme-light .tv-wl-preset-item {
+  color: #131722;
+}
+.tv-wl-preset-item:hover {
+  background-color: #2a2e39;
+}
+body.theme-light .tv-wl-preset-item:hover {
+  background-color: #f0f3fa;
+}
+.tv-wl-preset-item.active {
+  color: #2962ff;
+  font-weight: 700;
+  background-color: rgba(41, 98, 255, 0.12);
 }
 
-@keyframes tvSyncPulse {
-  0% { transform: scale(0.9); opacity: 0.7; }
-  50% { transform: scale(1.3); opacity: 1; }
-  100% { transform: scale(0.9); opacity: 0.7; }
+.tv-wl-preset-count {
+  font-size: 10.5px;
+  color: #787b86;
 }
 
-/* Color Filter Bar (TradingView Flags) */
+/* Header Action Buttons */
+.tv-wl-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tv-wl-header-btn {
+  background: transparent;
+  border: none;
+  color: #787b86;
+  padding: 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+.tv-wl-header-btn:hover {
+  color: #f0f3fa;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+body.theme-light .tv-wl-header-btn:hover {
+  color: #131722;
+  background-color: #f0f3fa;
+}
+.tv-wl-header-btn.active {
+  color: #2962ff;
+  background-color: rgba(41, 98, 255, 0.15);
+}
+
+/* Options Popover (...) */
+.tv-wl-options-wrap {
+  position: relative;
+}
+
+.tv-wl-options-popover {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 120;
+  background-color: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
+  width: 200px;
+  padding: 8px 10px;
+}
+body.theme-light .tv-wl-options-popover {
+  background-color: #ffffff;
+  border-color: #e0e3eb;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+}
+
+.tv-wl-opt-header {
+  font-size: 10px;
+  font-weight: 700;
+  color: #787b86;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.tv-wl-opt-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  font-size: 11.5px;
+  color: #d1d4dc;
+  cursor: pointer;
+  user-select: none;
+}
+body.theme-light .tv-wl-opt-item {
+  color: #131722;
+}
+.tv-wl-opt-item input[type="checkbox"] {
+  accent-color: #2962ff;
+  cursor: pointer;
+}
+
+.tv-wl-opt-divider {
+  height: 1px;
+  background-color: #2a2e39;
+  margin: 6px 0;
+}
+body.theme-light .tv-wl-opt-divider {
+  background-color: #e0e3eb;
+}
+
+.tv-wl-opt-action-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: #787b86;
+  font-size: 11px;
+  padding: 5px 2px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.tv-wl-opt-action-btn:hover {
+  color: #f23645;
+  background-color: rgba(242, 54, 69, 0.1);
+}
+
+/* 2. Color Filter Ribbon Chips */
 .tv-wl-filter-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 10px;
-  border-bottom: 1px solid #2a2e39;
+  padding: 5px 8px;
+  border-bottom: 1px solid #222631;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -1368,65 +1549,47 @@ body.theme-light .tv-wl-chip {
   color: #6b7280;
 }
 .tv-wl-chip:hover {
+  border-color: #787b86;
   color: #f0f3fa;
-  border-color: #374151;
 }
 body.theme-light .tv-wl-chip:hover {
   color: #131722;
-  border-color: #d1d5db;
 }
 .tv-wl-chip.active {
   background-color: #2962ff;
   border-color: #2962ff;
-  color: #ffffff;
+  color: #ffffff !important;
 }
-
 .tv-wl-color-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
+  display: inline-block;
 }
 
-.tv-wl-sort-btn {
-  margin-left: auto;
-  background: transparent;
-  border: 1px solid #2a2e39;
-  border-radius: 12px;
-  padding: 2px 6px;
-  font-size: 10px;
-  color: #787b86;
-  cursor: pointer;
+/* 3. Add Symbol Form */
+.tv-watchlist-add-form {
   display: flex;
   align-items: center;
-  gap: 3px;
-}
-.tv-wl-sort-btn:hover {
-  color: #f0f3fa;
-  border-color: #374151;
-}
-.tv-sort-tag {
-  color: #58a6ff;
-  font-weight: 700;
-}
-
-.tv-watchlist-add-form {
-  padding: 8px 10px;
-  display: flex;
-  gap: 6px;
+  padding: 6px 8px;
   border-bottom: 1px solid #2a2e39;
+  gap: 6px;
+  background-color: #1a1e29;
 }
 body.theme-light .tv-watchlist-add-form {
+  background-color: #f8f9fd;
   border-bottom-color: #e0e3eb;
 }
-
 .tv-watchlist-input {
   flex: 1;
   background-color: #131722;
   border: 1px solid #2a2e39;
-  color: #d1d4dc;
-  padding: 5px 8px;
   border-radius: 4px;
-  font-size: 12px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  color: #f0f3fa;
+  outline: none;
   text-transform: uppercase;
 }
 body.theme-light .tv-watchlist-input {
@@ -1435,16 +1598,15 @@ body.theme-light .tv-watchlist-input {
   color: #131722;
 }
 .tv-watchlist-input:focus {
-  outline: none;
   border-color: #2962ff;
 }
-
 .tv-btn-add-ticker {
   background-color: #2962ff;
-  color: #fff;
   border: none;
   border-radius: 4px;
-  padding: 0 8px;
+  color: #ffffff;
+  width: 28px;
+  height: 28px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1454,83 +1616,315 @@ body.theme-light .tv-watchlist-input {
   background-color: #1e53e5;
 }
 
+/* 4. Table Column Headers Row (TradingView Style) */
+.tv-wl-table-header {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  border-bottom: 1px solid #222631;
+  font-size: 10px;
+  font-weight: 600;
+  color: #787b86;
+  text-transform: none;
+  letter-spacing: 0.2px;
+  background-color: rgba(255, 255, 255, 0.015);
+}
+body.theme-light .tv-wl-table-header {
+  background-color: #f8f9fd;
+  border-bottom-color: #e0e3eb;
+  color: #6b7280;
+}
+
+.tv-wl-th {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.12s;
+}
+.tv-wl-th:hover {
+  color: #d1d4dc;
+}
+body.theme-light .tv-wl-th:hover {
+  color: #131722;
+}
+
+.tv-wl-th-ribbon-icon {
+  color: #787b86;
+  margin-right: 2px;
+}
+
+.tv-wl-th-symbol {
+  flex: 1.25;
+  min-width: 95px;
+}
+.tv-wl-th-last {
+  flex: 0.85;
+  justify-content: flex-end;
+  text-align: right;
+}
+.tv-wl-th-change {
+  flex: 0.75;
+  justify-content: flex-end;
+  text-align: right;
+}
+.tv-wl-th-pct {
+  flex: 0.8;
+  justify-content: flex-end;
+  text-align: right;
+}
+.tv-wl-th-vol {
+  flex: 0.75;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+/* 5. Symbol Rows Table */
 .tv-watchlist-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 6px;
+  padding: 2px 4px;
 }
 
 .tv-wl-empty {
-  padding: 20px 12px;
+  padding: 24px 12px;
   text-align: center;
   font-size: 11px;
   color: #787b86;
 }
 
-.tv-watchlist-item {
+.tv-wl-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px;
+  height: 33px;
+  padding: 0 6px;
   border-radius: 4px;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 0.1s;
+  position: relative;
+  margin-bottom: 1px;
   border: 1px solid transparent;
-  margin-bottom: 2px;
-  position: relative;
 }
-.tv-watchlist-item:hover {
-  background-color: #2a2e39;
+.tv-wl-row:hover {
+  background-color: #212530;
 }
-body.theme-light .tv-watchlist-item:hover {
-  background-color: #e0e3eb;
-}
-.tv-watchlist-item.active {
-  background-color: rgba(41, 98, 255, 0.15);
-  border-color: rgba(41, 98, 255, 0.4);
+body.theme-light .tv-wl-row:hover {
+  background-color: #f0f3fa;
 }
 
-.tv-watchlist-item-left {
+/* Active Row Outline Border (Matching TradingView SSI in user screenshot!) */
+.tv-wl-row.active {
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+body.theme-light .tv-wl-row.active {
+  border: 1px solid #2962ff;
+  background-color: rgba(41, 98, 255, 0.06);
+}
+
+/* Column: Symbol (Ribbon + Logo + Symbol + D + Dot) */
+.tv-wl-col-symbol {
+  flex: 1.25;
+  min-width: 95px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  gap: 5px;
+  overflow: hidden;
 }
 
-/* Flag Tag Wrapper & Popover */
-.tv-wl-flag-wrap {
+.tv-wl-ribbon-wrap {
   position: relative;
   display: flex;
   align-items: center;
-}
-
-.tv-wl-flag-btn {
-  background: transparent;
-  border: none;
+  flex-shrink: 0;
   cursor: pointer;
-  padding: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 2px;
-  color: #555a65;
-  transition: all 0.15s;
 }
-.tv-wl-flag-btn:hover {
-  transform: scale(1.15);
+
+.tv-wl-ribbon {
+  transition: transform 0.15s ease;
 }
-.tv-wl-flag-btn.has-flag {
+.tv-wl-ribbon:hover {
+  transform: scale(1.18);
+}
+.tv-wl-ribbon.has-flag {
   opacity: 1;
 }
 
+/* Circular Logo Avatar */
+.tv-wl-logo-avatar {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  font-size: 8px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: -0.3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.tv-wl-ticker-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f0f3fa;
+  letter-spacing: 0.1px;
+}
+body.theme-light .tv-wl-ticker-name {
+  color: #131722;
+}
+.tv-wl-row.active .tv-wl-ticker-name {
+  color: #ffffff;
+}
+body.theme-light .tv-wl-row.active .tv-wl-ticker-name {
+  color: #2962ff;
+}
+
+/* Timeframe badge 'D' */
+.tv-wl-tf-badge {
+  font-size: 8px;
+  font-weight: 800;
+  color: #f59e0b;
+  background-color: rgba(245, 158, 11, 0.18);
+  padding: 0 2.5px;
+  border-radius: 2px;
+  line-height: 12px;
+  flex-shrink: 0;
+}
+
+/* Market Status Dot */
+.tv-wl-market-dot {
+  width: 4.5px;
+  height: 4.5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: 1px;
+}
+.tv-wl-market-dot.dot-up {
+  background-color: #089981;
+}
+.tv-wl-market-dot.dot-down {
+  background-color: #f23645;
+}
+.tv-wl-market-dot.dot-neutral {
+  background-color: #787b86;
+}
+
+/* Column: Last Price */
+.tv-wl-col-last {
+  flex: 0.85;
+  display: flex;
+  justify-content: flex-end;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
+  color: #f0f3fa;
+  padding: 1px 2px;
+  border-radius: 3px;
+  transition: background-color 0.4s ease;
+}
+body.theme-light .tv-wl-col-last {
+  color: #131722;
+}
+.tv-wl-col-last.tv-flash-up {
+  background-color: rgba(8, 153, 129, 0.35);
+}
+.tv-wl-col-last.tv-flash-down {
+  background-color: rgba(242, 54, 69, 0.35);
+}
+
+/* Column: Net Change */
+.tv-wl-col-change {
+  flex: 0.75;
+  display: flex;
+  justify-content: flex-end;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
+}
+.tv-wl-col-change.up {
+  color: #089981;
+}
+.tv-wl-col-change.down {
+  color: #f23645;
+}
+.tv-wl-col-change.zero {
+  color: #787b86;
+}
+
+/* Column: % Change */
+.tv-wl-col-pct {
+  flex: 0.8;
+  display: flex;
+  justify-content: flex-end;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
+}
+.tv-wl-col-pct.up {
+  color: #089981;
+}
+.tv-wl-col-pct.down {
+  color: #f23645;
+}
+.tv-wl-col-pct.zero {
+  color: #787b86;
+}
+
+/* Column: Volume */
+.tv-wl-col-vol {
+  flex: 0.75;
+  display: flex;
+  justify-content: flex-end;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #787b86;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
+}
+
+/* Hover Delete Button */
+.tv-wl-row-delete-btn {
+  position: absolute;
+  right: 2px;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  color: #787b86;
+  opacity: 0;
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+body.theme-light .tv-wl-row-delete-btn {
+  background: #ffffff;
+  border-color: #e0e3eb;
+}
+.tv-wl-row:hover .tv-wl-row-delete-btn {
+  opacity: 1;
+}
+.tv-wl-row-delete-btn:hover {
+  color: #f23645;
+  background-color: rgba(242, 54, 69, 0.15);
+  border-color: #f23645;
+}
+
+/* Flag Tag Color Picker Popover */
 .tv-wl-color-popover {
   position: absolute;
   top: 22px;
   left: 0;
-  z-index: 100;
+  z-index: 130;
   background-color: #1e222d;
   border: 1px solid #2a2e39;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
   border-radius: 6px;
   padding: 8px;
   min-width: 150px;
@@ -1540,20 +1934,17 @@ body.theme-light .tv-wl-color-popover {
   border-color: #e0e3eb;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
-
 .tv-popover-header {
   font-size: 10px;
   font-weight: 700;
   color: #787b86;
   margin-bottom: 6px;
 }
-
 .tv-popover-palette {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-
 .tv-popover-color-dot {
   width: 18px;
   height: 18px;
@@ -1568,7 +1959,6 @@ body.theme-light .tv-wl-color-popover {
 .tv-popover-color-dot:hover {
   transform: scale(1.2);
 }
-
 .tv-popover-clear-btn {
   margin-top: 6px;
   width: 100%;
@@ -1584,103 +1974,14 @@ body.theme-light .tv-wl-color-popover {
   background-color: rgba(242, 54, 69, 0.1);
 }
 
-.tv-wl-sym-meta {
-  display: flex;
-  flex-direction: column;
-}
-.tv-wl-ticker {
-  font-size: 12px;
-  font-weight: 700;
-  color: #f0f3fa;
-}
-body.theme-light .tv-wl-ticker {
-  color: #131722;
-}
-.tv-watchlist-item.active .tv-wl-ticker {
-  color: #2962ff;
-}
-.tv-wl-exchange {
-  font-size: 10px;
-  color: #787b86;
-}
-
-/* Right: Price & % Badge */
-.tv-watchlist-item-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.tv-wl-price-col {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  padding: 1px 4px;
-  border-radius: 4px;
-  transition: background-color 0.4s ease;
-}
-
-.tv-wl-price-col.tv-flash-up {
-  background-color: rgba(8, 153, 129, 0.35);
-}
-
-.tv-wl-price-col.tv-flash-down {
-  background-color: rgba(242, 54, 69, 0.35);
-}
-.tv-wl-price-val {
-  font-size: 11px;
-  font-weight: 700;
-  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
-  color: #f0f3fa;
-}
-body.theme-light .tv-wl-price-val {
-  color: #131722;
-}
-
-.tv-wl-pct-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
-}
-.tv-wl-pct-badge.up {
-  background-color: rgba(8, 153, 129, 0.15);
-  color: #089981;
-}
-.tv-wl-pct-badge.down {
-  background-color: rgba(242, 54, 69, 0.15);
-  color: #f23645;
-}
-
-.tv-wl-delete-btn {
-  background: transparent;
-  border: none;
-  color: #787b86;
-  opacity: 0;
-  cursor: pointer;
-  padding: 3px;
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.15s;
-}
-.tv-watchlist-item:hover .tv-wl-delete-btn {
-  opacity: 1;
-}
-.tv-wl-delete-btn:hover {
-  color: #f23645;
-  background-color: rgba(242, 54, 69, 0.15);
-}
-
+/* 6. Selected Stock Detail Card at Bottom */
 .tv-watchlist-detail-card {
   padding: 10px;
   border-top: 1px solid #2a2e39;
   background-color: #181b24;
 }
 body.theme-light .tv-watchlist-detail-card {
-  background-color: #f0f3fa;
+  background-color: #f8f9fd;
   border-top-color: #e0e3eb;
 }
 
@@ -1690,42 +1991,66 @@ body.theme-light .tv-watchlist-detail-card {
   justify-content: space-between;
   margin-bottom: 8px;
 }
+.tv-detail-ticker-group {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
 .tv-detail-ticker {
   font-size: 14px;
-  font-weight: 700;
-  color: #2962ff;
+  font-weight: 800;
+  color: #f0f3fa;
+}
+body.theme-light .tv-detail-ticker {
+  color: #131722;
+}
+.tv-detail-tf {
+  font-size: 10px;
+  color: #787b86;
+  font-weight: 500;
 }
 .tv-detail-change {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   font-size: 12px;
   font-weight: 700;
 }
-.tv-detail-change.up { color: #089981; }
-.tv-detail-change.down { color: #f23645; }
+.tv-detail-change.up {
+  color: #089981;
+}
+.tv-detail-change.down {
+  color: #f23645;
+}
 
 .tv-detail-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  font-size: 11px;
+  gap: 6px 12px;
 }
 .tv-detail-item {
   display: flex;
   flex-direction: column;
 }
 .tv-detail-lbl {
-  color: #787b86;
   font-size: 10px;
+  color: #787b86;
 }
 .tv-detail-val {
+  font-size: 12px;
   font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
+  color: #f0f3fa;
 }
-.up { color: #089981; }
-.down { color: #f23645; }
-.pos { color: #089981; }
-.neg { color: #f23645; }
+body.theme-light .tv-detail-val {
+  color: #131722;
+}
+.tv-detail-val.up {
+  color: #089981;
+}
+.tv-detail-val.down {
+  color: #f23645;
+}
 
 /* ==========================================================================
    4. BOTTOM DOCK: STRATEGY TESTER / BACKTEST PANEL

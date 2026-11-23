@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import {
   Plus,
   Trash2,
@@ -8,24 +8,121 @@ import {
   TrendingDown,
   Bookmark,
   Check,
-  ArrowUpDown,
+  ChevronDown,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
+  Sliders,
+  FolderPlus,
 } from 'lucide-react'
 import { fetchQuotes } from '../api/stockApi'
 import { syncWatchlistCloud, fetchWatchlistCloud } from '../services/cloudStorage'
 import { isCloudEnabled } from '../lib/supabase'
 
-const DEFAULT_WATCHLIST = ['VNINDEX', 'VN30', 'FPT', 'HPG', 'VCB', 'SSI', 'MWG', 'TCB']
+export const PRESET_WATCHLISTS = {
+  DEFAULT: {
+    id: 'DEFAULT',
+    name: 'Danh sách theo dõi',
+    symbols: ['CEC', 'SSI', 'VCE', 'VIX', 'CTG', 'MBS', 'VTP', 'KDH', 'BID', 'BCM', 'CII', 'CMC', 'CTS', 'SHS', 'VPB', 'TPB', 'VDS'],
+  },
+  VN30: {
+    id: 'VN30',
+    name: 'VN30 Index',
+    symbols: ['ACB', 'BCM', 'BID', 'BVH', 'CTG', 'FPT', 'GAS', 'GVR', 'HDB', 'HPG', 'MBB', 'MSN', 'MWG', 'PLX', 'POW', 'SAB', 'SHB', 'SSB', 'SSI', 'STB', 'TCB', 'TPB', 'VHM', 'VIB', 'VIC', 'VJC', 'VNM', 'VPB', 'VRE'],
+  },
+  SECURITIES: {
+    id: 'SECURITIES',
+    name: 'Ngành Chứng khoán',
+    symbols: ['SSI', 'VIX', 'VND', 'HCM', 'VCI', 'MBS', 'SHS', 'CTS', 'FTS', 'BSI', 'AGR', 'VDS'],
+  },
+  BANKING: {
+    id: 'BANKING',
+    name: 'Ngành Ngân hàng',
+    symbols: ['VCB', 'BID', 'CTG', 'TCB', 'MBB', 'ACB', 'VPB', 'HDB', 'STB', 'TPB', 'VIB', 'SHB', 'LPB'],
+  },
+  REAL_ESTATE: {
+    id: 'REAL_ESTATE',
+    name: 'Ngành Bất động sản',
+    symbols: ['VHM', 'VIC', 'VRE', 'NVL', 'PDR', 'DIG', 'DXG', 'KDH', 'NLG', 'CEO', 'BCM'],
+  },
+  STEEL: {
+    id: 'STEEL',
+    name: 'Ngành Thép',
+    symbols: ['HPG', 'HSG', 'NKG', 'VGS', 'TLH'],
+  },
+}
+
 const STORAGE_KEY = 'vn_stock_watchlist'
 const FLAGS_STORAGE_KEY = 'vn_watchlist_flags'
+const COLUMNS_STORAGE_KEY = 'vn_watchlist_columns'
+const EXPANDED_STORAGE_KEY = 'vn_watchlist_expanded'
+const ACTIVE_LIST_KEY = 'vn_watchlist_active_preset'
 
 export const FLAG_COLORS = [
   { id: 'red', name: 'Đỏ (Cắt lỗ / Chú ý)', hex: '#f23645' },
-  { id: 'blue', name: 'Xanh dương (Bluechip / Trụ)', hex: '#2962ff' },
-  { id: 'green', name: 'Xanh lá (Tăng trưởng / Điểm mua)', hex: '#089981' },
+  { id: 'blue', name: 'Xanh dương (Trụ / Bluechip)', hex: '#2962ff' },
+  { id: 'green', name: 'Xanh lá (Điểm mua / Tăng)', hex: '#089981' },
   { id: 'yellow', name: 'Vàng (Theo dõi tín hiệu)', hex: '#e3b341' },
   { id: 'purple', name: 'Tím (Tiềm năng / Siêu cổ)', hex: '#a855f7' },
-  { id: 'orange', name: 'Cam (Biến động / Lướt sóng)', hex: '#f97316' },
+  { id: 'orange', name: 'Cam (Biến động / Lướt)', hex: '#f97316' },
 ]
+
+export const STOCK_BRANDS = {
+  SSI: { bg: '#c4161c', text: '#ffffff', label: 'SSI' },
+  CEC: { bg: '#0284c7', text: '#ffffff', label: 'CEC' },
+  VCE: { bg: '#089981', text: '#ffffff', label: 'VCE' },
+  VIX: { bg: '#2962ff', text: '#ffffff', label: 'VIX' },
+  CTG: { bg: '#0066b3', text: '#ffffff', label: 'CTG' },
+  MBS: { bg: '#b91c1c', text: '#ffffff', label: '★' },
+  VTP: { bg: '#e11d48', text: '#ffffff', label: 'V' },
+  KDH: { bg: '#15803d', text: '#ffffff', label: 'K' },
+  BID: { bg: '#1e3a8a', text: '#ffffff', label: 'BID' },
+  BCM: { bg: '#ea580c', text: '#ffffff', label: '⌂' },
+  CII: { bg: '#0284c7', text: '#ffffff', label: 'CII' },
+  CMC: { bg: '#7c3aed', text: '#ffffff', label: 'CMC' },
+  CTS: { bg: '#0284c7', text: '#ffffff', label: 'CTS' },
+  SHS: { bg: '#ea580c', text: '#ffffff', label: 'SHS' },
+  VPB: { bg: '#059669', text: '#ffffff', label: 'VPB' },
+  TPB: { bg: '#7c3aed', text: '#ffffff', label: 'TPB' },
+  VDS: { bg: '#dc2626', text: '#ffffff', label: 'VDS' },
+  VCB: { bg: '#047857', text: '#ffffff', label: 'VCB' },
+  FPT: { bg: '#f97316', text: '#ffffff', label: 'FPT' },
+  HPG: { bg: '#0369a1', text: '#ffffff', label: 'HPG' },
+  TCB: { bg: '#dc2626', text: '#ffffff', label: 'TCB' },
+  MWG: { bg: '#ca8a04', text: '#ffffff', label: 'MWG' },
+  VHM: { bg: '#b45309', text: '#ffffff', label: 'VHM' },
+  VIC: { bg: '#b91c1c', text: '#ffffff', label: 'VIC' },
+  VND: { bg: '#f59e0b', text: '#ffffff', label: 'VND' },
+  MBB: { bg: '#1d4ed8', text: '#ffffff', label: 'MBB' },
+  ACB: { bg: '#0284c7', text: '#ffffff', label: 'ACB' },
+  STB: { bg: '#0369a1', text: '#ffffff', label: 'STB' },
+  GAS: { bg: '#0284c7', text: '#ffffff', label: 'GAS' },
+  DGC: { bg: '#047857', text: '#ffffff', label: 'DGC' },
+  PVD: { bg: '#0369a1', text: '#ffffff', label: 'PVD' },
+  NVL: { bg: '#b45309', text: '#ffffff', label: 'NVL' },
+  PDR: { bg: '#b91c1c', text: '#ffffff', label: 'PDR' },
+  DIG: { bg: '#0284c7', text: '#ffffff', label: 'DIG' },
+  DXG: { bg: '#059669', text: '#ffffff', label: 'DXG' },
+  VNINDEX: { bg: '#2962ff', text: '#ffffff', label: 'VN' },
+  VN30: { bg: '#a855f7', text: '#ffffff', label: '30' },
+}
+
+export function getStockBrand(sym = '') {
+  if (STOCK_BRANDS[sym]) return STOCK_BRANDS[sym]
+  let hash = 0
+  for (let i = 0; i < sym.length; i++) {
+    hash = sym.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  const hue = Math.abs(hash) % 360
+  return {
+    bg: `hsl(${hue}, 65%, 42%)`,
+    text: '#ffffff',
+    label: sym.slice(0, 3),
+  }
+}
 
 export default function TradingViewWatchlist({
   activeSymbol,
@@ -33,12 +130,16 @@ export default function TradingViewWatchlist({
   onClose,
   latestBar,
 }) {
+  const [activePresetId, setActivePresetId] = useState(() => {
+    return localStorage.getItem(ACTIVE_LIST_KEY) || 'DEFAULT'
+  })
+
   const [symbols, setSymbols] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
       if (saved) return JSON.parse(saved)
     } catch {}
-    return DEFAULT_WATCHLIST
+    return PRESET_WATCHLISTS.DEFAULT.symbols
   })
 
   const [symbolFlags, setSymbolFlags] = useState(() => {
@@ -46,30 +147,78 @@ export default function TradingViewWatchlist({
       const saved = localStorage.getItem(FLAGS_STORAGE_KEY)
       if (saved) return JSON.parse(saved)
     } catch {}
-    return {}
+    return {
+      VCE: 'red', // Match red flag in user screenshot
+    }
+  })
+
+  // Visible columns configuration
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    try {
+      const saved = localStorage.getItem(COLUMNS_STORAGE_KEY)
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return {
+      lastPrice: true, // Lần cuối
+      change: true,    // Th.đổi
+      pctChange: true, // %ThĐổi
+      volume: false,   // Khối lượng
+      logo: true,      // Logo công ty
+      flags: true,     // Cờ đánh dấu
+    }
+  })
+
+  const [isExpanded, setIsExpanded] = useState(() => {
+    return localStorage.getItem(EXPANDED_STORAGE_KEY) === 'true'
   })
 
   const [colorFilter, setColorFilter] = useState('ALL')
   const [activeColorPickerSym, setActiveColorPickerSym] = useState(null)
   const [newTicker, setNewTicker] = useState('')
+  const [showAddInput, setShowAddInput] = useState(false)
+  const [showPresetDropdown, setShowPresetDropdown] = useState(false)
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false)
   const [quotes, setQuotes] = useState({})
   const [flashes, setFlashes] = useState({})
-  const [sortBy, setSortBy] = useState('default') // 'default', 'pct_desc', 'pct_asc'
-  const colorPickerRef = useRef(null)
 
-  // Persist symbols
+  // Sorting: { column: 'symbol' | 'lastPrice' | 'change' | 'pctChange' | 'volume', direction: 'asc' | 'desc' | 'default' }
+  const [sortConfig, setSortConfig] = useState({ column: 'default', direction: 'default' })
+
+  const colorPickerRef = useRef(null)
+  const presetDropdownRef = useRef(null)
+  const optionsMenuRef = useRef(null)
+  const addInputRef = useRef(null)
+
+  // Persist settings
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(symbols))
     } catch {}
   }, [symbols])
 
-  // Persist flags
   useEffect(() => {
     try {
       localStorage.setItem(FLAGS_STORAGE_KEY, JSON.stringify(symbolFlags))
     } catch {}
   }, [symbolFlags])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(visibleColumns))
+    } catch {}
+  }, [visibleColumns])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(EXPANDED_STORAGE_KEY, String(isExpanded))
+    } catch {}
+  }, [isExpanded])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ACTIVE_LIST_KEY, activePresetId)
+    } catch {}
+  }, [activePresetId])
 
   // Background Cloud Restore on mount
   useEffect(() => {
@@ -103,18 +252,31 @@ export default function TradingViewWatchlist({
     }
   }, [symbols, symbolFlags])
 
-  // Close color picker popover on click outside
+  // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (colorPickerRef.current && !colorPickerRef.current.contains(e.target)) {
         setActiveColorPickerSym(null)
+      }
+      if (presetDropdownRef.current && !presetDropdownRef.current.contains(e.target)) {
+        setShowPresetDropdown(false)
+      }
+      if (optionsMenuRef.current && !optionsMenuRef.current.contains(e.target)) {
+        setShowOptionsMenu(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Batch fetch quotes for ALL watchlist symbols
+  // Focus add input when opened
+  useEffect(() => {
+    if (showAddInput && addInputRef.current) {
+      addInputRef.current.focus()
+    }
+  }, [showAddInput])
+
+  // Batch fetch quotes for watchlist symbols
   useEffect(() => {
     let isMounted = true
     const loadQuotes = async () => {
@@ -198,9 +360,10 @@ export default function TradingViewWatchlist({
     const clean = newTicker.trim().toUpperCase()
     if (!clean) return
     if (!symbols.includes(clean)) {
-      setSymbols([...symbols, clean])
+      setSymbols([clean, ...symbols])
     }
     setNewTicker('')
+    setShowAddInput(false)
   }
 
   const handleRemove = (sym, e) => {
@@ -224,6 +387,35 @@ export default function TradingViewWatchlist({
     setActiveColorPickerSym(null)
   }
 
+  const handleSelectPreset = (presetKey) => {
+    const preset = PRESET_WATCHLISTS[presetKey]
+    if (preset) {
+      setActivePresetId(presetKey)
+      setSymbols(preset.symbols)
+      setShowPresetDropdown(false)
+    }
+  }
+
+  const toggleSort = (col) => {
+    setSortConfig((prev) => {
+      if (prev.column !== col) {
+        return { column: col, direction: 'desc' }
+      }
+      if (prev.direction === 'desc') {
+        return { column: col, direction: 'asc' }
+      }
+      return { column: 'default', direction: 'default' }
+    })
+  }
+
+  const toggleColumnVisibility = (colKey) => {
+    setVisibleColumns((prev) => ({
+      ...prev,
+      [colKey]: !prev[colKey],
+    }))
+  }
+
+  // Format helpers
   const formatPrice = (val, sym) => {
     if (val == null) return '--'
     const isIndex = ['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'].includes(sym)
@@ -233,39 +425,71 @@ export default function TradingViewWatchlist({
     }).format(val)
   }
 
-  const formatNum = (n, sym = activeSymbol) => {
-    if (n == null) return '--'
+  const formatChange = (val, sym) => {
+    if (val == null) return '0'
     const isIndex = ['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'].includes(sym)
-    return new Intl.NumberFormat('vi-VN', {
+    const sign = val > 0 ? '' : ''
+    const num = new Intl.NumberFormat('vi-VN', {
       minimumFractionDigits: isIndex ? 2 : 0,
       maximumFractionDigits: isIndex ? 2 : 0,
-    }).format(n)
+    }).format(val)
+    return `${sign}${num}`
   }
 
-  const formatVol = (v) =>
-    v != null ? new Intl.NumberFormat('vi-VN').format(Math.round(v)) : '--'
+  const formatVol = (v) => {
+    if (v == null) return '--'
+    if (v >= 1e6) return `${(v / 1e6).toFixed(2)} M`
+    if (v >= 1e3) return `${(v / 1e3).toFixed(1)} K`
+    return new Intl.NumberFormat('vi-VN').format(Math.round(v))
+  }
 
   // Filtered and Sorted Symbols
-  const filteredSymbols = symbols.filter((sym) => {
-    if (colorFilter === 'ALL') return true
-    return symbolFlags[sym] === colorFilter
-  })
+  const filteredSymbols = useMemo(() => {
+    return symbols.filter((sym) => {
+      if (colorFilter === 'ALL') return true
+      return symbolFlags[sym] === colorFilter
+    })
+  }, [symbols, colorFilter, symbolFlags])
 
-  const sortedSymbols = [...filteredSymbols].sort((a, b) => {
-    if (sortBy === 'pct_desc') {
-      const pctA = quotes[a]?.pct_change ?? -999
-      const pctB = quotes[b]?.pct_change ?? -999
-      return pctB - pctA
+  const sortedSymbols = useMemo(() => {
+    if (sortConfig.column === 'default' || sortConfig.direction === 'default') {
+      return filteredSymbols
     }
-    if (sortBy === 'pct_asc') {
-      const pctA = quotes[a]?.pct_change ?? 999
-      const pctB = quotes[b]?.pct_change ?? 999
-      return pctA - pctB
-    }
-    return 0
-  })
+    const { column, direction } = sortConfig
+    const multiplier = direction === 'asc' ? 1 : -1
 
-  // Active symbol quote or latest bar
+    return [...filteredSymbols].sort((a, b) => {
+      const qA = quotes[a]
+      const qB = quotes[b]
+
+      if (column === 'symbol') {
+        return a.localeCompare(b) * multiplier
+      }
+      if (column === 'lastPrice') {
+        const pA = qA?.close ?? 0
+        const pB = qB?.close ?? 0
+        return (pA - pB) * multiplier
+      }
+      if (column === 'change') {
+        const cA = qA?.change ?? 0
+        const cB = qB?.change ?? 0
+        return (cA - cB) * multiplier
+      }
+      if (column === 'pctChange') {
+        const pctA = qA?.pct_change ?? 0
+        const pctB = qB?.pct_change ?? 0
+        return (pctA - pctB) * multiplier
+      }
+      if (column === 'volume') {
+        const vA = qA?.volume ?? 0
+        const vB = qB?.volume ?? 0
+        return (vA - vB) * multiplier
+      }
+      return 0
+    })
+  }, [filteredSymbols, quotes, sortConfig])
+
+  // Active Symbol Detail
   const activeQuote = quotes[activeSymbol]
   const activePriceChange = activeQuote
     ? activeQuote.pct_change
@@ -274,24 +498,158 @@ export default function TradingViewWatchlist({
     : 0
   const isActiveUp = activePriceChange >= 0
 
+  const activePresetName = PRESET_WATCHLISTS[activePresetId]?.name || 'Danh sách theo dõi'
+
   return (
-    <aside className="tv-watchlist-drawer">
-      {/* Header */}
+    <aside className={`tv-watchlist-drawer ${isExpanded ? 'tv-wl-expanded' : ''}`}>
+      {/* 1. Header Toolbar (TradingView exact styling) */}
       <div className="tv-watchlist-header">
-        <div className="tv-watchlist-title">
-          <ListFilter size={15} color="#58a6ff" />
-          <span>Danh mục theo dõi</span>
-          <span className="tv-live-sync-badge" title="Dữ liệu giá nhảy realtime đồng bộ tất cả mã">
-            <span className="tv-live-sync-dot"></span>
-            Realtime
-          </span>
+        {/* Watchlist Preset Selector */}
+        <div className="tv-wl-title-wrap" ref={presetDropdownRef}>
+          <button
+            type="button"
+            className="tv-wl-dropdown-trigger"
+            onClick={() => setShowPresetDropdown(!showPresetDropdown)}
+            title="Đổi danh sách theo dõi"
+          >
+            <span className="tv-wl-title-text">{activePresetName}</span>
+            <ChevronDown size={14} className={`tv-wl-chevron ${showPresetDropdown ? 'open' : ''}`} />
+          </button>
+
+          {/* Preset Dropdown Menu */}
+          {showPresetDropdown && (
+            <div className="tv-wl-preset-dropdown">
+              <div className="tv-wl-dropdown-header">Danh sách mẫu</div>
+              {Object.values(PRESET_WATCHLISTS).map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`tv-wl-preset-item ${activePresetId === preset.id ? 'active' : ''}`}
+                  onClick={() => handleSelectPreset(preset.id)}
+                >
+                  <span>{preset.name}</span>
+                  <span className="tv-wl-preset-count">{preset.symbols.length} mã</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <button className="tv-icon-btn" onClick={onClose} title="Thu nhỏ / Đóng Watchlist">
-          <X size={15} />
-        </button>
+
+        {/* Action Buttons: Add, Expand, Options, Close */}
+        <div className="tv-wl-header-actions">
+          {/* Add Symbol */}
+          <button
+            type="button"
+            className={`tv-wl-header-btn ${showAddInput ? 'active' : ''}`}
+            onClick={() => setShowAddInput(!showAddInput)}
+            title="Thêm mã cổ phiếu (+)"
+          >
+            <Plus size={15} />
+          </button>
+
+          {/* Expand / Minimize Width */}
+          <button
+            type="button"
+            className={`tv-wl-header-btn ${isExpanded ? 'active' : ''}`}
+            onClick={() => setIsExpanded(!isExpanded)}
+            title={isExpanded ? 'Thu gọn chiều rộng' : 'Mở rộng hiển thị đầy đủ các cột'}
+          >
+            {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+
+          {/* Three dots (...) Options menu */}
+          <div className="tv-wl-options-wrap" ref={optionsMenuRef}>
+            <button
+              type="button"
+              className={`tv-wl-header-btn ${showOptionsMenu ? 'active' : ''}`}
+              onClick={() => setShowOptionsMenu(!showOptionsMenu)}
+              title="Cấu hình hiển thị các cột (Lần cuối, Th.đổi, %ThĐổi, Khối lượng...)"
+            >
+              <MoreHorizontal size={15} />
+            </button>
+
+            {/* Column Visibility Config Popover */}
+            {showOptionsMenu && (
+              <div className="tv-wl-options-popover">
+                <div className="tv-wl-opt-header">Cột hiển thị</div>
+                <label className="tv-wl-opt-item">
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.lastPrice}
+                    onChange={() => toggleColumnVisibility('lastPrice')}
+                  />
+                  <span>Lần cuối (Giá khớp)</span>
+                </label>
+                <label className="tv-wl-opt-item">
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.change}
+                    onChange={() => toggleColumnVisibility('change')}
+                  />
+                  <span>Th.đổi (Biến động giá)</span>
+                </label>
+                <label className="tv-wl-opt-item">
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.pctChange}
+                    onChange={() => toggleColumnVisibility('pctChange')}
+                  />
+                  <span>%ThĐổi (% Tăng/Giảm)</span>
+                </label>
+                <label className="tv-wl-opt-item">
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.volume}
+                    onChange={() => toggleColumnVisibility('volume')}
+                  />
+                  <span>Khối lượng (Volume)</span>
+                </label>
+                <div className="tv-wl-opt-divider" />
+                <label className="tv-wl-opt-item">
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.logo}
+                    onChange={() => toggleColumnVisibility('logo')}
+                  />
+                  <span>Biểu tượng (Logo)</span>
+                </label>
+                <label className="tv-wl-opt-item">
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.flags}
+                    onChange={() => toggleColumnVisibility('flags')}
+                  />
+                  <span>Cờ màu phân loại</span>
+                </label>
+                <div className="tv-wl-opt-divider" />
+                <button
+                  type="button"
+                  className="tv-wl-opt-action-btn"
+                  onClick={() => {
+                    setSymbols(PRESET_WATCHLISTS.DEFAULT.symbols)
+                    setShowOptionsMenu(false)
+                  }}
+                >
+                  <RotateCcw size={12} />
+                  <span>Khôi phục mặc định</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Close Watchlist */}
+          <button
+            type="button"
+            className="tv-wl-header-btn"
+            onClick={onClose}
+            title="Đóng thanh theo dõi"
+          >
+            <X size={15} />
+          </button>
+        </div>
       </div>
 
-      {/* Color Filter Bar (TradingView Filter Flags) */}
+      {/* 2. Color Filter Ribbon Chips */}
       <div className="tv-wl-filter-row">
         <button
           type="button"
@@ -322,181 +680,273 @@ export default function TradingViewWatchlist({
             </button>
           )
         })}
-
-        <button
-          type="button"
-          className="tv-wl-sort-btn"
-          onClick={() =>
-            setSortBy((prev) =>
-              prev === 'default' ? 'pct_desc' : prev === 'pct_desc' ? 'pct_asc' : 'default'
-            )
-          }
-          title={`Sắp xếp: ${
-            sortBy === 'pct_desc'
-              ? 'Tăng nhiều nhất (Giảm dần)'
-              : sortBy === 'pct_asc'
-              ? 'Giảm nhiều nhất (Tăng dần)'
-              : 'Mặc định'
-          }`}
-        >
-          <ArrowUpDown size={12} />
-          {sortBy === 'pct_desc' && <span className="tv-sort-tag">▲ %</span>}
-          {sortBy === 'pct_asc' && <span className="tv-sort-tag">▼ %</span>}
-        </button>
       </div>
 
-      {/* Add form */}
-      <form onSubmit={handleAdd} className="tv-watchlist-add-form">
-        <input
-          type="text"
-          placeholder="Thêm mã (VD: VHM, VIC, DGC, BSR)..."
-          value={newTicker}
-          onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
-          className="tv-watchlist-input"
-        />
-        <button type="submit" className="tv-btn-add-ticker" title="Thêm mã vào Watchlist">
-          <Plus size={14} />
-        </button>
-      </form>
+      {/* 3. Inline Add Symbol Form */}
+      {showAddInput && (
+        <form onSubmit={handleAdd} className="tv-watchlist-add-form">
+          <input
+            ref={addInputRef}
+            type="text"
+            placeholder="Thêm mã (VD: VHM, HPG, SSI, FPT)..."
+            value={newTicker}
+            onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
+            className="tv-watchlist-input"
+          />
+          <button type="submit" className="tv-btn-add-ticker" title="Thêm mã vào danh sách">
+            <Plus size={14} />
+          </button>
+        </form>
+      )}
 
-      {/* Symbol List with Realtime % and Color Flags */}
+      {/* 4. Table Column Headers Row (TradingView Style) */}
+      <div className="tv-wl-table-header">
+        {/* Symbol Column Header */}
+        <div
+          className="tv-wl-th tv-wl-th-symbol"
+          onClick={() => toggleSort('symbol')}
+          title="Sắp xếp theo mã giao dịch"
+        >
+          {visibleColumns.flags && <Bookmark size={11} className="tv-wl-th-ribbon-icon" />}
+          <span>Mã giao dịch</span>
+          {sortConfig.column === 'symbol' && (
+            sortConfig.direction === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+          )}
+        </div>
+
+        {/* Last Price Column Header */}
+        {visibleColumns.lastPrice && (
+          <div
+            className="tv-wl-th tv-wl-th-last"
+            onClick={() => toggleSort('lastPrice')}
+            title="Sắp xếp theo giá Lần cuối"
+          >
+            <span>Lần cuối</span>
+            {sortConfig.column === 'lastPrice' && (
+              sortConfig.direction === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+            )}
+          </div>
+        )}
+
+        {/* Net Change Column Header */}
+        {visibleColumns.change && (
+          <div
+            className="tv-wl-th tv-wl-th-change"
+            onClick={() => toggleSort('change')}
+            title="Sắp xếp theo mức Thay đổi tuyệt đối"
+          >
+            <span>Th.đổi</span>
+            {sortConfig.column === 'change' && (
+              sortConfig.direction === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+            )}
+          </div>
+        )}
+
+        {/* % Change Column Header */}
+        {visibleColumns.pctChange && (
+          <div
+            className="tv-wl-th tv-wl-th-pct"
+            onClick={() => toggleSort('pctChange')}
+            title="Sắp xếp theo % Thay đổi"
+          >
+            <span>%ThĐổi</span>
+            {sortConfig.column === 'pctChange' && (
+              sortConfig.direction === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+            )}
+          </div>
+        )}
+
+        {/* Volume Column Header (Optional) */}
+        {visibleColumns.volume && (
+          <div
+            className="tv-wl-th tv-wl-th-vol"
+            onClick={() => toggleSort('volume')}
+            title="Sắp xếp theo Khối lượng giao dịch"
+          >
+            <span>K.Lượng</span>
+            {sortConfig.column === 'volume' && (
+              sortConfig.direction === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 5. Symbol Rows Table */}
       <div className="tv-watchlist-list">
         {sortedSymbols.length === 0 ? (
           <div className="tv-wl-empty">
-            <span>Không có mã nào trong bộ lọc cờ màu này.</span>
+            <span>Không có mã nào trong danh sách.</span>
           </div>
         ) : (
           sortedSymbols.map((sym) => {
             const isActive = sym.toUpperCase() === (activeSymbol || '').toUpperCase()
-            const isIndex = sym === 'VNINDEX' || sym === 'VN30'
             const flagId = symbolFlags[sym]
             const flagColor = FLAG_COLORS.find((c) => c.id === flagId)
+            const brand = getStockBrand(sym)
             const quote = quotes[sym]
 
-            let priceStr = '--'
-            let pctStr = '--'
-            let isUp = true
+            let price = quote?.close
+            let change = quote?.change ?? 0
+            let pctChange = quote?.pct_change ?? 0
+            let volume = quote?.volume
 
-            if (quote && quote.close != null) {
-              priceStr = formatPrice(quote.close, sym)
-              const pct = quote.pct_change || 0
-              isUp = pct >= 0
-              pctStr = `${isUp ? '+' : ''}${pct.toFixed(2)}%`
-            } else if (isActive && latestBar && latestBar.close != null) {
-              priceStr = formatPrice(latestBar.close, sym)
-              const refPrice = latestBar.ref_price || quote?.ref_price || latestBar.open || latestBar.close
-              const diff = latestBar.close - refPrice
-              const pct = refPrice ? (diff / refPrice) * 100 : 0
-              isUp = pct >= 0
-              pctStr = `${isUp ? '+' : ''}${pct.toFixed(2)}%`
+            // If active and we have fresh latestBar from chart
+            if (isActive && latestBar && latestBar.close != null) {
+              price = latestBar.close
+              const ref = latestBar.ref_price || quote?.ref_price || latestBar.open || latestBar.close
+              change = price - ref
+              pctChange = ref ? (change / ref) * 100 : 0
+              if (latestBar.volume != null) volume = latestBar.volume
             }
+
+            const isUp = change > 0
+            const isDown = change < 0
+            const isZero = change === 0 || change == null
+
+            const changeClass = isUp ? 'up' : isDown ? 'down' : 'zero'
+            const formattedPrice = formatPrice(price, sym)
+            const formattedChange = formatChange(change, sym)
+            const formattedPct = `${isUp ? '' : ''}${Number(pctChange || 0).toFixed(2)}%`
+            const formattedVol = formatVol(volume)
 
             return (
               <div
                 key={sym}
-                className={`tv-watchlist-item ${isActive ? 'active' : ''}`}
-                style={{
-                  borderLeft: flagColor ? `3px solid ${flagColor.hex}` : '3px solid transparent',
-                }}
+                className={`tv-wl-row ${isActive ? 'active' : ''}`}
                 onClick={() => onSelectSymbol(sym)}
               >
-                {/* Left: Color flag button + Ticker + Exchange */}
-                <div className="tv-watchlist-item-left">
-                  {/* Flag Tag Button */}
-                  <div
-                    className="tv-wl-flag-wrap"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      type="button"
-                      className={`tv-wl-flag-btn ${flagColor ? 'has-flag' : ''}`}
-                      style={{ color: flagColor ? flagColor.hex : '#787b86' }}
-                      onClick={() =>
+                {/* Symbol Col: Ribbon + Logo + Symbol + D + Dot */}
+                <div className="tv-wl-col-symbol">
+                  {/* Left Ribbon Bookmark Flag */}
+                  {visibleColumns.flags && (
+                    <div
+                      className="tv-wl-ribbon-wrap"
+                      onClick={(e) => {
+                        e.stopPropagation()
                         setActiveColorPickerSym((curr) => (curr === sym ? null : sym))
-                      }
-                      title={
-                        flagColor
-                          ? `Đang gắn cờ ${flagColor.name} (Bấm để đổi/xóa màu)`
-                          : `Gắn cờ màu chú ý cho ${sym}`
-                      }
+                      }}
+                      title={flagColor ? `Đang gắn cờ ${flagColor.name}` : `Gắn cờ màu cho ${sym}`}
                     >
                       <Bookmark
                         size={13}
-                        fill={flagColor ? flagColor.hex : 'none'}
-                        strokeWidth={flagColor ? 2 : 1.6}
+                        className={`tv-wl-ribbon ${flagColor ? 'has-flag' : ''}`}
+                        fill={flagColor ? flagColor.hex : '#2e323e'}
+                        color={flagColor ? flagColor.hex : '#363c4e'}
+                        strokeWidth={1.5}
                       />
-                    </button>
 
-                    {/* Mini Color Picker Popover */}
-                    {activeColorPickerSym === sym && (
-                      <div
-                        ref={colorPickerRef}
-                        className="tv-wl-color-popover"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="tv-popover-header">Gắn cờ màu chú ý ({sym})</div>
-                        <div className="tv-popover-palette">
-                          {FLAG_COLORS.map((c) => (
+                      {/* Mini Color Picker Popover */}
+                      {activeColorPickerSym === sym && (
+                        <div
+                          ref={colorPickerRef}
+                          className="tv-wl-color-popover"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="tv-popover-header">Gắn cờ chú ý ({sym})</div>
+                          <div className="tv-popover-palette">
+                            {FLAG_COLORS.map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                className={`tv-popover-color-dot ${flagId === c.id ? 'active' : ''}`}
+                                style={{ backgroundColor: c.hex }}
+                                onClick={() => handleSetFlag(sym, c.id)}
+                                title={c.name}
+                              >
+                                {flagId === c.id && <Check size={11} color="#ffffff" />}
+                              </button>
+                            ))}
+                          </div>
+                          {flagId && (
                             <button
-                              key={c.id}
                               type="button"
-                              className={`tv-popover-color-dot ${flagId === c.id ? 'active' : ''}`}
-                              style={{ backgroundColor: c.hex }}
-                              onClick={() => handleSetFlag(sym, c.id)}
-                              title={c.name}
+                              className="tv-popover-clear-btn"
+                              onClick={() => handleSetFlag(sym, null)}
                             >
-                              {flagId === c.id && <Check size={11} color="#ffffff" />}
+                              Xóa gắn cờ
                             </button>
-                          ))}
+                          )}
                         </div>
-                        {flagId && (
-                          <button
-                            type="button"
-                            className="tv-popover-clear-btn"
-                            onClick={() => handleSetFlag(sym, null)}
-                          >
-                            Xóa gắn cờ
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
-                  <div className="tv-wl-sym-meta">
-                    <span className="tv-wl-ticker">{sym}</span>
-                    <span className="tv-wl-exchange">{isIndex ? 'Index' : 'HOSE'}</span>
-                  </div>
+                  {/* Circular Logo Avatar */}
+                  {visibleColumns.logo && (
+                    <div
+                      className="tv-wl-logo-avatar"
+                      style={{ backgroundColor: brand.bg, color: brand.text }}
+                    >
+                      <span>{brand.label}</span>
+                    </div>
+                  )}
+
+                  {/* Symbol Ticker Name */}
+                  <span className="tv-wl-ticker-name">{sym}</span>
+
+                  {/* Timeframe Badge 'D' */}
+                  <span className="tv-wl-tf-badge" title="Khung thời gian Ngày (Daily)">
+                    D
+                  </span>
+
+                  {/* Market Status Dot */}
+                  <span
+                    className={`tv-wl-market-dot ${isUp ? 'dot-up' : isDown ? 'dot-down' : 'dot-neutral'}`}
+                    title="Trạng thái phiên giao dịch"
+                  />
                 </div>
 
-                {/* Right: Live Price + Growth % Badge + Delete */}
-                <div className="tv-watchlist-item-right">
-                  <div className={`tv-wl-price-col ${flashes[sym] ? `tv-flash-${flashes[sym]}` : ''}`}>
-                    <span className="tv-wl-price-val">{priceStr}</span>
-                    <span className={`tv-wl-pct-badge ${isUp ? 'up' : 'down'}`}>
-                      {pctStr}
-                    </span>
+                {/* Last Price Column */}
+                {visibleColumns.lastPrice && (
+                  <div className={`tv-wl-col-last ${flashes[sym] ? `tv-flash-${flashes[sym]}` : ''}`}>
+                    <span>{formattedPrice}</span>
                   </div>
+                )}
 
-                  <button
-                    type="button"
-                    className="tv-wl-delete-btn"
-                    onClick={(e) => handleRemove(sym, e)}
-                    title={`Xóa ${sym} khỏi danh mục`}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
+                {/* Net Change Column */}
+                {visibleColumns.change && (
+                  <div className={`tv-wl-col-change ${changeClass}`}>
+                    <span>{formattedChange}</span>
+                  </div>
+                )}
+
+                {/* % Change Column */}
+                {visibleColumns.pctChange && (
+                  <div className={`tv-wl-col-pct ${changeClass}`}>
+                    <span>{formattedPct}</span>
+                  </div>
+                )}
+
+                {/* Volume Column (Optional) */}
+                {visibleColumns.volume && (
+                  <div className="tv-wl-col-vol">
+                    <span>{formattedVol}</span>
+                  </div>
+                )}
+
+                {/* Hover Delete Button */}
+                <button
+                  type="button"
+                  className="tv-wl-row-delete-btn"
+                  onClick={(e) => handleRemove(sym, e)}
+                  title={`Xóa ${sym} khỏi danh sách`}
+                >
+                  <Trash2 size={12} />
+                </button>
               </div>
             )
           })
         )}
       </div>
 
-      {/* Selected Stock Detail Card */}
+      {/* 6. Selected Stock Detail Card at Bottom */}
       {latestBar && (
         <div className="tv-watchlist-detail-card">
           <div className="tv-detail-title-row">
-            <span className="tv-detail-ticker">{activeSymbol}</span>
+            <div className="tv-detail-ticker-group">
+              <span className="tv-detail-ticker">{activeSymbol}</span>
+              <span className="tv-detail-tf">1D · HOSE</span>
+            </div>
             <span className={`tv-detail-change ${isActiveUp ? 'up' : 'down'}`}>
               {isActiveUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
               {isActiveUp ? '+' : ''}
@@ -507,19 +957,19 @@ export default function TradingViewWatchlist({
           <div className="tv-detail-grid">
             <div className="tv-detail-item">
               <span className="tv-detail-lbl">Giá đóng cửa</span>
-              <span className="tv-detail-val">{formatNum(latestBar.close)}</span>
+              <span className="tv-detail-val">{formatPrice(latestBar.close, activeSymbol)}</span>
             </div>
             <div className="tv-detail-item">
               <span className="tv-detail-lbl">Giá mở cửa</span>
-              <span className="tv-detail-val">{formatNum(latestBar.open)}</span>
+              <span className="tv-detail-val">{formatPrice(latestBar.open, activeSymbol)}</span>
             </div>
             <div className="tv-detail-item">
               <span className="tv-detail-lbl">Cao nhất (High)</span>
-              <span className="tv-detail-val up">{formatNum(latestBar.high)}</span>
+              <span className="tv-detail-val up">{formatPrice(latestBar.high, activeSymbol)}</span>
             </div>
             <div className="tv-detail-item">
               <span className="tv-detail-lbl">Thấp nhất (Low)</span>
-              <span className="tv-detail-val down">{formatNum(latestBar.low)}</span>
+              <span className="tv-detail-val down">{formatPrice(latestBar.low, activeSymbol)}</span>
             </div>
             <div className="tv-detail-item" style={{ gridColumn: 'span 2' }}>
               <span className="tv-detail-lbl">Khối lượng (Volume)</span>
