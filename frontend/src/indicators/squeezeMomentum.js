@@ -75,14 +75,17 @@ export const squeezeMomentumIndicator = {
       key: 'zeroDot',
       title: 'Squeeze: ',
       type: 'circle',
-      attrs: () => ({ r: 2.8 }),
+      attrs: ({ coordinate, barSpace }) => ({
+        x: coordinate?.current?.x ?? 0,
+        y: coordinate?.current?.zeroDot ?? 0,
+        r: Math.max(2, Math.min(3.5, (barSpace && barSpace.halfGapBar) || 2.5)),
+      }),
       styles: (data) => {
         const cur = getIndicatorData(data)
         if (!cur) return { color: '#787b86', style: 'fill' }
-        return {
-          color: cur.squeezeOn ? '#ff1744' : '#00e676', // Red = Squeeze ON (Nén), Green = Fired (Bung)
-          style: 'fill',
-        }
+        if (cur.squeezeOn) return { color: '#ff1744', style: 'fill' }  // Đỏ tươi: Đang nén chặt (Squeeze ON)
+        if (cur.squeezeOff) return { color: '#00e676', style: 'fill' } // Xanh lá/Lime: Bung nén (Squeeze FIRED)
+        return { color: '#787b86', style: 'fill' }                   // Xám: Bình thường (No Squeeze)
       },
     },
   ],
@@ -99,8 +102,15 @@ export const squeezeMomentumIndicator = {
     const result = indicator.result || []
     const cur = result[dataIndex] || {}
     const mom = cur.mom != null ? Number(cur.mom).toFixed(2) : '--'
-    const sqzText = cur.squeezeOn ? 'NÉN CHẶT (Squeeze ON)' : 'BUNG NÉN (Squeeze FIRED)'
-    const sqzColor = cur.squeezeOn ? '#ff1744' : '#00e676'
+    let sqzText = 'Bình thường (No Squeeze)'
+    let sqzColor = '#9ca3af'
+    if (cur.squeezeOn) {
+      sqzText = '🔴 NÉN CHẶT (Squeeze ON)'
+      sqzColor = '#ff1744'
+    } else if (cur.squeezeOff) {
+      sqzText = '🟢 BUNG NÉN (Squeeze FIRED)'
+      sqzColor = '#00e676'
+    }
     
     let momColor = '#00e676'
     if (cur.colorState === 2) momColor = '#00897b'
@@ -176,8 +186,10 @@ export const squeezeMomentumIndicator = {
       const kcUpper = basis + kcMult * trAvg
       const kcLower = basis - kcMult * trAvg
 
-      // 3. Squeeze state: BB is inside KC
+      // 3. Squeeze state: BB is inside KC (Squeeze ON) vs BB outside KC (Squeeze FIRED/OFF)
       const squeezeOn = bbLower > kcLower && bbUpper < kcUpper
+      const squeezeOff = bbLower < kcLower && bbUpper > kcUpper
+      const noSqueeze = !squeezeOn && !squeezeOff
 
       // 4. Momentum oscillator: Linear Regression of Delta
       let highestHigh = -Infinity
@@ -195,19 +207,23 @@ export const squeezeMomentumIndicator = {
       const subDeltas = deltas.slice(-n)
       const mom = linearRegression(subDeltas, n)
 
+      // Pure previous mom from prior bar
+      const prevMom = deltas.length > n ? linearRegression(deltas.slice(-n - 1, -1), n) : 0
+
       // Color state
       let colorState = 1
       if (mom > 0) {
         colorState = mom >= prevMom ? 1 : 2 // 1: Lime green, 2: Dark green
       } else {
-        colorState = mom <= prevMom ? 3 : 4 // 3: Deep red, 4: Light orange
+        colorState = mom <= prevMom ? 3 : 4 // 3: Deep red, 4: Light orange/Maroon
       }
-      prevMom = mom
 
       return {
         mom,
         zeroDot: 0,
         squeezeOn,
+        squeezeOff,
+        noSqueeze,
         colorState,
       }
     })

@@ -102,10 +102,14 @@ export const cmMacdMtfIndicator = {
       key: 'crossDot',
       title: '',
       type: 'circle',
-      attrs: () => ({ r: 3.5 }),
+      attrs: ({ coordinate, barSpace }) => ({
+        x: coordinate?.current?.x ?? 0,
+        y: coordinate?.current?.crossDot ?? 0,
+        r: Math.max(2.5, Math.min(4.5, (barSpace && barSpace.halfGapBar) || 3.5)),
+      }),
       styles: (data) => {
         const cur = getIndicatorData(data)
-        if (!cur || cur.cross === 0) return { color: 'transparent' }
+        if (!cur || !cur.cross) return { color: 'transparent', style: 'fill' }
         return {
           color: cur.cross === 1 ? '#00e676' : '#ff1744',
           style: 'fill',

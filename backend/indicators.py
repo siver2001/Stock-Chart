@@ -356,8 +356,9 @@ def compute_squeeze_momentum(
     kc_upper = basis + kc_mult * tr_ma
     kc_lower = basis - kc_mult * tr_ma
 
-    # Squeeze On: BB is inside KC
+    # Squeeze On: BB is inside KC; Squeeze Off: BB is outside KC
     squeeze_on = (bb_lower > kc_lower) & (bb_upper < kc_upper)
+    squeeze_off = (bb_lower < kc_lower) & (bb_upper > kc_upper)
 
     # 3. Linear Regression Momentum
     highest_high = high.rolling(length, min_periods=length).max()
@@ -401,6 +402,7 @@ def compute_squeeze_momentum(
         {
             "sqz_mom": mom_series,
             "sqz_on": sqz_arr,
+            "sqz_off": squeeze_off.to_numpy(dtype=bool),
             "sqz_fired": sqz_fired,
             "sqz_color": color_state,
         },

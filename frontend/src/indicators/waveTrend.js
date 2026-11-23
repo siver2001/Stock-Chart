@@ -9,10 +9,21 @@
  * - ci = (ap - esa) / (0.015 * d)
  * - wt1 = EMA(ci, n2=21)
  * - wt2 = SMA(wt1, 4)
- * - Overbought: +60, Oversold: -60
+ * - Overbought: +60, +53; Oversold: -60, -53
  * - Điểm Mua Vàng (Golden Cross): wt1 cắt lên wt2 tại vùng quá bán (<= -50)
  * - Điểm Bán Đỉnh (Death Cross): wt1 cắt xuống wt2 tại vùng quá mua (>= +50)
  */
+
+function getIndicatorData(data) {
+  if (!data) return null
+  if (data.current && data.current.indicatorData !== undefined) {
+    return data.current.indicatorData
+  }
+  if (data.indicatorData !== undefined) {
+    return data.indicatorData
+  }
+  return data
+}
 
 export const waveTrendIndicator = {
   name: 'WAVETREND',
@@ -34,16 +45,34 @@ export const waveTrendIndicator = {
       styles: () => ({ color: '#ff1744', size: 1.5, style: 'dashed' }), // Slow line (Red)
     },
     {
+      key: 'signalDot',
+      title: '',
+      type: 'circle',
+      attrs: ({ coordinate, barSpace }) => ({
+        x: coordinate?.current?.x ?? 0,
+        y: coordinate?.current?.signalDot ?? 0,
+        r: Math.max(3, Math.min(5, (barSpace && barSpace.halfGapBar) || 3.5)),
+      }),
+      styles: (data) => {
+        const cur = getIndicatorData(data)
+        if (!cur || !cur.signal) return { color: 'transparent', style: 'fill' }
+        return {
+          color: cur.signal === 'BUY' ? '#00e676' : '#ff1744',
+          style: 'fill',
+        }
+      },
+    },
+    {
       key: 'overbought',
       title: '',
       type: 'line',
-      styles: () => ({ color: 'rgba(239, 68, 68, 0.5)', style: 'dashed', size: 1 }),
+      styles: () => ({ color: 'rgba(239, 68, 68, 0.6)', style: 'dashed', size: 1 }),
     },
     {
       key: 'oversold',
       title: '',
       type: 'line',
-      styles: () => ({ color: 'rgba(16, 185, 129, 0.5)', style: 'dashed', size: 1 }),
+      styles: () => ({ color: 'rgba(16, 185, 129, 0.6)', style: 'dashed', size: 1 }),
     },
     {
       key: 'zero',
@@ -70,10 +99,10 @@ export const waveTrendIndicator = {
     let signalText = 'Bình thường'
     let signalColor = '#9ca3af'
     if (cur.signal === 'BUY') {
-      signalText = '★ MUA QUÁ BÁN'
+      signalText = '★ MUA QUÁ BÁN (Golden Cross)'
       signalColor = '#00e676'
     } else if (cur.signal === 'SELL') {
-      signalText = '▼ BÁN QUÁ MUA'
+      signalText = '▼ BÁN QUÁ MUA (Death Cross)'
       signalColor = '#ff1744'
     } else if (Number(cur.wt1) >= 60) {
       signalText = 'Vùng Quá Mua (>60)'
@@ -185,6 +214,7 @@ export const waveTrendIndicator = {
         oversold: -60,
         zero: 0,
         signal,
+        signalDot: signal ? wt2 : undefined,
       })
     }
 
