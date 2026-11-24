@@ -17,8 +17,10 @@ import {
   RotateCcw,
   Sliders,
   FolderPlus,
+  GripVertical,
+  AlertCircle,
 } from 'lucide-react'
-import { fetchQuotes } from '../api/stockApi'
+import { fetchQuotes, searchSymbols } from '../api/stockApi'
 import { syncWatchlistCloud, fetchWatchlistCloud } from '../services/cloudStorage'
 import { isCloudEnabled } from '../lib/supabase'
 
@@ -60,6 +62,7 @@ const FLAGS_STORAGE_KEY = 'vn_watchlist_flags'
 const COLUMNS_STORAGE_KEY = 'vn_watchlist_columns'
 const EXPANDED_STORAGE_KEY = 'vn_watchlist_expanded'
 const ACTIVE_LIST_KEY = 'vn_watchlist_active_preset'
+const WIDTH_STORAGE_KEY = 'vn_watchlist_custom_width'
 
 export const FLAG_COLORS = [
   { id: 'red', name: 'Đỏ (Cắt lỗ / Chú ý)', hex: '#f23645' },
@@ -183,6 +186,33 @@ export default function TradingViewWatchlist({
     return localStorage.getItem(EXPANDED_STORAGE_KEY) === 'true'
   })
 
+  // Resizable drawer width state & handle
+  const [drawerWidth, setDrawerWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem(WIDTH_STORAGE_KEY)
+      if (saved) {
+        const num = Number(saved)
+        if (num >= 220 && num <= 700) return num
+      }
+    } catch {}
+    return isExpanded ? 440 : 330
+  })
+  const [isResizing, setIsResizing] = useState(false)
+  const isResizingRef = useRef(false)
+
+  // Autocomplete and ticker validation states
+  const [suggestions, setSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
+  const [addError, setAddError] = useState('')
+  const allKnownSymbolsRef = useRef(new Set())
+  const searchDebounceRef = useRef(null)
+  const suggestionsRef = useRef(null)
+
+  // Drag and drop reordering states
+  const [draggedIndex, setDraggedIndex] = useState(null)
+  const [dragOverIndex, setDragOverIndex] = useState(null)
+
   const [colorFilter, setColorFilter] = useState('ALL')
   const [activeColorPickerSym, setActiveColorPickerSym] = useState(null)
   const [newTicker, setNewTicker] = useState('')
@@ -231,6 +261,26 @@ export default function TradingViewWatchlist({
     } catch {}
   }, [activePresetId])
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(WIDTH_STORAGE_KEY, String(drawerWidth))
+    } catch {}
+  }, [drawerWidth])
+
+  // Preload known symbols list for instant O(1) existence validation
+  useEffect(() => {
+    let isMounted = true
+    searchSymbols('').then((list) => {
+      if (isMounted && Array.isArray(list)) {
+        const s = new Set(list.map((it) => (it.ticker || it.symbol || '').toUpperCase()))
+        allKnownSymbolsRef.current = s
+      }
+    }).catch(() => {})
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   // Background Cloud Restore on mount
   useEffect(() => {
     let isMounted = true
@@ -274,6 +324,9 @@ export default function TradingViewWatchlist({
       }
       if (optionsMenuRef.current && !optionsMenuRef.current.contains(e.target)) {
         setShowOptionsMenu(false)
+      }
+      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target)) {
+        setShowSuggestions(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -382,15 +435,216 @@ export default function TradingViewWatchlist({
     }
   }, [activeSymbol, latestBar])
 
+  // Drawer width resizing logic
+  const handleResizeStart = (e) => {
+    e.preventDefault()
+    isResizingRef.current = true
+    setIsResizing(true)
+    const startX = e.clientX
+    const startWidth = drawerWidth
+
+    const onMouseMove = (moveEv) => {
+      if (!isResizingRef.current) return
+      // Moving mouse left increases width (since drawer is docked to the right edge)
+      const delta = startX - moveEv.clientX
+      const nextW = Math.max(220, Math.min(650, startWidth + delta))
+      setDrawerWidth(nextW)
+    }
+
+    const onMouseUp = () => {
+      isResizingRef.current = false
+      setIsResizing(false)
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+
+  const handleToggleExpand = () => {
+    setIsExpanded((prev) => {
+      const next = !prev
+      const nextW = next ? 460 : 330
+      setDrawerWidth(nextW)
+      try {
+        localStorage.setItem(WIDTH_STORAGE_KEY, String(nextW))
+        localStorage.setItem(EXPANDED_STORAGE_KEY, String(next))
+      } catch {}
+      return next
+    })
+  }
+
+  // Autocomplete and search input change
+  const handleTickerInputChange = (e) => {
+    const val = e.target.value.toUpperCase()
+    setNewTicker(val)
+    setAddError('')
+
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+
+    if (!val.trim()) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        setIsSearching(true)
+        const list = await searchSymbols(val.trim())
+        if (Array.isArray(list)) {
+          const filtered = list.filter((item) => {
+            const symCode = (item.ticker || item.symbol || '').toUpperCase()
+            const symName = (item.name || '').toUpperCase()
+            const query = val.trim()
+            return symCode.includes(query) || symName.includes(query)
+          })
+          setSuggestions(filtered.slice(0, 8))
+          setShowSuggestions(filtered.length > 0)
+        }
+      } catch {
+        setSuggestions([])
+      } finally {
+        setIsSearching(false)
+      }
+    }, 100)
+  }
+
+  // Strict symbol validation: only add if ticker exists on market!
+  const addValidatedTicker = async (targetTicker) => {
+    const clean = (targetTicker || '').trim().toUpperCase()
+    if (!clean) return
+
+    let exists = allKnownSymbolsRef.current.has(clean)
+
+    // Check against suggestions if not in preloaded catalog
+    if (!exists) {
+      const foundInSug = suggestions.find(
+        (s) => (s.ticker || s.symbol || '').toUpperCase() === clean
+      )
+      if (foundInSug) {
+        exists = true
+        allKnownSymbolsRef.current.add(clean)
+      }
+    }
+
+    // Verify online via search if still unknown
+    if (!exists) {
+      try {
+        const results = await searchSymbols(clean)
+        const exactMatch = results.find(
+          (r) => (r.ticker || r.symbol || '').toUpperCase() === clean
+        )
+        if (exactMatch) {
+          exists = true
+          allKnownSymbolsRef.current.add(clean)
+        }
+      } catch {}
+    }
+
+    if (!exists) {
+      setAddError(`Mã "${clean}" không tồn tại hoặc không hợp lệ!`)
+      return
+    }
+
+    if (!symbols.includes(clean)) {
+      setSymbols((prev) => [clean, ...prev])
+    }
+
+    // Keep add bar open until user manually closes it, clear input & refocus for fast continuous addition
+    setNewTicker('')
+    setSuggestions([])
+    setShowSuggestions(false)
+    setAddError('')
+    addInputRef.current?.focus()
+  }
+
   const handleAdd = (e) => {
     e.preventDefault()
-    const clean = newTicker.trim().toUpperCase()
-    if (!clean) return
-    if (!symbols.includes(clean)) {
-      setSymbols([clean, ...symbols])
+    if (!newTicker.trim()) return
+
+    const exact = suggestions.find(
+      (s) => (s.ticker || s.symbol || '').toUpperCase() === newTicker.trim().toUpperCase()
+    )
+    if (exact) {
+      addValidatedTicker(exact.ticker || exact.symbol)
+    } else {
+      addValidatedTicker(newTicker)
     }
-    setNewTicker('')
+  }
+
+  const handleSelectSuggestion = (ticker) => {
+    addValidatedTicker(ticker)
+  }
+
+  const handleCloseAddBar = () => {
     setShowAddInput(false)
+    setNewTicker('')
+    setSuggestions([])
+    setShowSuggestions(false)
+    setAddError('')
+  }
+
+  // Drag and Drop row reordering
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(index))
+  }
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index)
+    }
+  }
+
+  const handleDragLeave = () => {
+    // Keep drag hover stable
+  }
+
+  const handleDrop = (e, targetIndex) => {
+    e.preventDefault()
+    if (draggedIndex === null || draggedIndex === targetIndex) {
+      setDraggedIndex(null)
+      setDragOverIndex(null)
+      return
+    }
+
+    const draggedSym = sortedSymbols[draggedIndex]
+    const targetSym = sortedSymbols[targetIndex]
+
+    if (!draggedSym || !targetSym || draggedSym === targetSym) {
+      setDraggedIndex(null)
+      setDragOverIndex(null)
+      return
+    }
+
+    // Reset sort configuration to default so custom drag order is preserved
+    if (sortConfig.column !== 'default') {
+      setSortConfig({ column: 'default', direction: 'default' })
+    }
+
+    setSymbols((prevSymbols) => {
+      const next = [...prevSymbols]
+      const fromIdx = next.indexOf(draggedSym)
+      const toIdx = next.indexOf(targetSym)
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const [moved] = next.splice(fromIdx, 1)
+        next.splice(toIdx, 0, moved)
+      }
+      return next
+    })
+
+    setDraggedIndex(null)
+    setDragOverIndex(null)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null)
+    setDragOverIndex(null)
   }
 
   const handleRemove = (sym, e) => {
@@ -533,7 +787,17 @@ export default function TradingViewWatchlist({
   const activePresetName = PRESET_WATCHLISTS[activePresetId]?.name || 'Danh sách theo dõi'
 
   return (
-    <aside className={`tv-watchlist-drawer ${isExpanded ? 'tv-wl-expanded' : ''}`}>
+    <aside
+      className={`tv-watchlist-drawer ${isExpanded ? 'tv-wl-expanded' : ''} ${isResizing ? 'resizing' : ''}`}
+      style={{ width: `${drawerWidth}px` }}
+    >
+      {/* Draggable border handle on the left edge to shrink or widen drawer */}
+      <div
+        className={`tv-wl-resize-handle ${isResizing ? 'active' : ''}`}
+        onMouseDown={handleResizeStart}
+        title="Kéo sang trái/phải để thu hẹp hoặc mở rộng danh sách"
+      />
+
       {/* 1. Header Toolbar (TradingView exact styling) */}
       <div className="tv-watchlist-header">
         {/* Watchlist Preset Selector */}
@@ -583,8 +847,8 @@ export default function TradingViewWatchlist({
           <button
             type="button"
             className={`tv-wl-header-btn ${isExpanded ? 'active' : ''}`}
-            onClick={() => setIsExpanded(!isExpanded)}
-            title={isExpanded ? 'Thu gọn chiều rộng' : 'Mở rộng hiển thị đầy đủ các cột'}
+            onClick={handleToggleExpand}
+            title={isExpanded ? 'Thu gọn chiều rộng (330px)' : 'Mở rộng hiển thị đầy đủ các cột (460px)'}
           >
             {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
@@ -714,21 +978,77 @@ export default function TradingViewWatchlist({
         })}
       </div>
 
-      {/* 3. Inline Add Symbol Form */}
+      {/* 3. Inline Add Symbol Form with Autocomplete Suggestions */}
       {showAddInput && (
-        <form onSubmit={handleAdd} className="tv-watchlist-add-form">
-          <input
-            ref={addInputRef}
-            type="text"
-            placeholder="Thêm mã (VD: VHM, HPG, SSI, FPT)..."
-            value={newTicker}
-            onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
-            className="tv-watchlist-input"
-          />
-          <button type="submit" className="tv-btn-add-ticker" title="Thêm mã vào danh sách">
-            <Plus size={14} />
-          </button>
-        </form>
+        <div className="tv-watchlist-add-container">
+          <form onSubmit={handleAdd} className="tv-watchlist-add-form">
+            <input
+              ref={addInputRef}
+              type="text"
+              placeholder="Thêm mã (VD: VHM, HPG, SSI, FPT)..."
+              value={newTicker}
+              onChange={handleTickerInputChange}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  handleCloseAddBar()
+                }
+              }}
+              className="tv-watchlist-input"
+            />
+            <button type="submit" className="tv-btn-add-ticker" title="Thêm mã vào danh sách [Enter]">
+              <Plus size={14} />
+            </button>
+            <button
+              type="button"
+              className="tv-btn-close-add"
+              onClick={handleCloseAddBar}
+              title="Đóng thanh thêm mã (Esc)"
+            >
+              <X size={14} />
+            </button>
+          </form>
+
+          {/* Error Message if invalid symbol */}
+          {addError && (
+            <div className="tv-wl-add-error">
+              <AlertCircle size={12} />
+              <span>{addError}</span>
+            </div>
+          )}
+
+          {/* Autocomplete Suggestions Popover */}
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="tv-wl-suggestions-popover" ref={suggestionsRef}>
+              <div className="tv-wl-sug-header">Gợi ý mã cổ phiếu ({suggestions.length})</div>
+              {suggestions.map((item) => {
+                const itemTicker = item.ticker || item.symbol
+                const brand = getStockBrand(itemTicker)
+                return (
+                  <div
+                    key={itemTicker}
+                    className="tv-wl-sug-item"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      handleSelectSuggestion(itemTicker)
+                    }}
+                  >
+                    <div className="tv-wl-sug-left">
+                      <div
+                        className="tv-wl-logo-avatar mini"
+                        style={{ backgroundColor: brand.bg, color: brand.text }}
+                      >
+                        <span>{brand.label}</span>
+                      </div>
+                      <span className="tv-wl-sug-ticker">{itemTicker}</span>
+                      <span className="tv-wl-sug-name">{item.name}</span>
+                    </div>
+                    <span className="tv-wl-sug-exchange">{item.exchange || 'HOSE'}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* 4. Table Column Headers Row (TradingView Style) */}
@@ -810,7 +1130,7 @@ export default function TradingViewWatchlist({
             <span>Không có mã nào trong danh sách.</span>
           </div>
         ) : (
-          sortedSymbols.map((sym) => {
+          sortedSymbols.map((sym, idx) => {
             const isActive = sym.toUpperCase() === (activeSymbol || '').toUpperCase()
             const flagId = symbolFlags[sym]
             const flagColor = FLAG_COLORS.find((c) => c.id === flagId)
@@ -850,9 +1170,20 @@ export default function TradingViewWatchlist({
             return (
               <div
                 key={sym}
-                className={`tv-wl-row ${isActive ? 'active' : ''}`}
+                className={`tv-wl-row ${isActive ? 'active' : ''} ${draggedIndex === idx ? 'dragging' : ''} ${dragOverIndex === idx && draggedIndex !== idx ? 'drag-over' : ''}`}
+                draggable={true}
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, idx)}
+                onDragEnd={handleDragEnd}
                 onClick={() => onSelectSymbol(sym)}
               >
+                {/* Drag Grip Handle */}
+                <span className="tv-wl-drag-grip" title="Nắm giữ để kéo thả đổi vị trí">
+                  <GripVertical size={12} />
+                </span>
+
                 {/* Symbol Col: Ribbon + Logo + Symbol + D + Dot */}
                 <div className="tv-wl-col-symbol">
                   {/* Left Ribbon Bookmark Flag */}

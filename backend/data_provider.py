@@ -32,7 +32,11 @@ DEFAULT_VN_SYMBOLS: List[Dict[str, str]] = [
     # Technology & Telecom
     {"ticker": "FPT", "name": "CTCP FPT (Công nghệ & Viễn thông)", "shortName": "FPT", "exchange": "HOSE", "market": "stocks", "priceCurrency": "VND", "type": "CS"},
     {"ticker": "CMG", "name": "Tập đoàn Công nghệ CMC", "shortName": "CMG", "exchange": "HOSE", "market": "stocks", "priceCurrency": "VND", "type": "CS"},
+    {"ticker": "CMC", "name": "CTCP Đầu tư CMC", "shortName": "CMC", "exchange": "HNX", "market": "stocks", "priceCurrency": "VND", "type": "CS"},
     {"ticker": "CTR", "name": "Tổng công ty Công trình Viettel", "shortName": "CTR", "exchange": "HOSE", "market": "stocks", "priceCurrency": "VND", "type": "CS"},
+    {"ticker": "VTP", "name": "Tổng CTCP Bưu chính Viettel (Viettel Post)", "shortName": "VTP", "exchange": "HOSE", "market": "stocks", "priceCurrency": "VND", "type": "CS"},
+    {"ticker": "CEC", "name": "CTCP Thiết kế Xây dựng Điện lực", "shortName": "CEC", "exchange": "UPCOM", "market": "stocks", "priceCurrency": "VND", "type": "CS"},
+    {"ticker": "VCE", "name": "CTCP Vận tải Đa phương thức", "shortName": "VCE", "exchange": "UPCOM", "market": "stocks", "priceCurrency": "VND", "type": "CS"},
     {"ticker": "ELC", "name": "CTCP Công nghệ Elcom", "shortName": "ELC", "exchange": "HOSE", "market": "stocks", "priceCurrency": "VND", "type": "CS"},
     {"ticker": "FOX", "name": "CTCP Viễn thông FPT (FPT Telecom)", "shortName": "FOX", "exchange": "UPCOM", "market": "stocks", "priceCurrency": "VND", "type": "CS"},
     {"ticker": "VGI", "name": "Tổng công ty CP Đầu tư Quốc tế Viettel", "shortName": "VGI", "exchange": "UPCOM", "market": "stocks", "priceCurrency": "VND", "type": "CS"},

@@ -1269,7 +1269,7 @@ body.theme-light .tv-auto-scale-btn:hover {
    3. RIGHT SIDEBAR: TRADINGVIEW WATCHLIST (100% Fidelity)
    ========================================================================== */
 .tv-watchlist-drawer {
-  width: 325px;
+  width: 330px;
   background-color: #131722;
   border-left: 1px solid #2a2e39;
   display: flex;
@@ -1277,14 +1277,35 @@ body.theme-light .tv-auto-scale-btn:hover {
   flex-shrink: 0;
   z-index: 15;
   user-select: none;
-  transition: width 0.2s ease;
+  position: relative;
+  transition: width 0.15s ease;
+}
+.tv-watchlist-drawer.resizing {
+  transition: none !important;
 }
 .tv-watchlist-drawer.tv-wl-expanded {
-  width: 420px;
+  width: 440px;
 }
 body.theme-light .tv-watchlist-drawer {
   background-color: #ffffff;
   border-left-color: #e0e3eb;
+}
+
+/* Left resize border handle */
+.tv-wl-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 30;
+  transition: background-color 0.15s;
+}
+.tv-wl-resize-handle:hover,
+.tv-wl-resize-handle.active {
+  background-color: #2962ff;
+  box-shadow: 0 0 6px rgba(41, 98, 255, 0.6);
 }
 
 /* 1. Header Toolbar */
@@ -1567,18 +1588,23 @@ body.theme-light .tv-wl-chip:hover {
   display: inline-block;
 }
 
-/* 3. Add Symbol Form */
+/* 3. Add Symbol Form & Autocomplete Suggestions */
+.tv-watchlist-add-container {
+  position: relative;
+  border-bottom: 1px solid #2a2e39;
+}
+body.theme-light .tv-watchlist-add-container {
+  border-bottom-color: #e0e3eb;
+}
 .tv-watchlist-add-form {
   display: flex;
   align-items: center;
   padding: 6px 8px;
-  border-bottom: 1px solid #2a2e39;
-  gap: 6px;
+  gap: 5px;
   background-color: #1a1e29;
 }
 body.theme-light .tv-watchlist-add-form {
   background-color: #f8f9fd;
-  border-bottom-color: #e0e3eb;
 }
 .tv-watchlist-input {
   flex: 1;
@@ -1611,9 +1637,135 @@ body.theme-light .tv-watchlist-input {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background-color 0.12s;
+  flex-shrink: 0;
 }
 .tv-btn-add-ticker:hover {
   background-color: #1e53e5;
+}
+.tv-btn-close-add {
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #787b86;
+  width: 26px;
+  height: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s, background-color 0.12s;
+  flex-shrink: 0;
+}
+.tv-btn-close-add:hover {
+  color: #f0f3fa;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+body.theme-light .tv-btn-close-add:hover {
+  color: #131722;
+  background-color: #e0e3eb;
+}
+
+/* Add validation error */
+.tv-wl-add-error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  color: #f23645;
+  background-color: #1a1e29;
+}
+body.theme-light .tv-wl-add-error {
+  background-color: #f8f9fd;
+}
+
+/* Autocomplete suggestions popover */
+.tv-wl-suggestions-popover {
+  position: absolute;
+  top: 100%;
+  left: 6px;
+  right: 6px;
+  background-color: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  z-index: 50;
+  max-height: 230px;
+  overflow-y: auto;
+}
+body.theme-light .tv-wl-suggestions-popover {
+  background-color: #ffffff;
+  border-color: #e0e3eb;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+.tv-wl-sug-header {
+  font-size: 10px;
+  font-weight: 700;
+  color: #787b86;
+  padding: 5px 8px 3px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-transform: uppercase;
+}
+body.theme-light .tv-wl-sug-header {
+  border-bottom-color: #e0e3eb;
+  color: #9ca3af;
+}
+.tv-wl-sug-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  cursor: pointer;
+  gap: 8px;
+  transition: background-color 0.1s;
+}
+.tv-wl-sug-item:hover {
+  background-color: rgba(41, 98, 255, 0.15);
+}
+body.theme-light .tv-wl-sug-item:hover {
+  background-color: #f0f3fa;
+}
+.tv-wl-sug-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  flex: 1;
+}
+.tv-wl-logo-avatar.mini {
+  width: 16px;
+  height: 16px;
+  font-size: 7px;
+}
+.tv-wl-sug-ticker {
+  font-weight: 700;
+  font-size: 12px;
+  color: #2962ff;
+  min-width: 38px;
+}
+.tv-wl-sug-name {
+  font-size: 11px;
+  color: #787b86;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.theme-light .tv-wl-sug-name {
+  color: #6b7280;
+}
+.tv-wl-sug-exchange {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #787b86;
+  background-color: rgba(255, 255, 255, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+body.theme-light .tv-wl-sug-exchange {
+  background-color: #f0f3fa;
+  color: #4b5563;
 }
 
 /* 4. Table Column Headers Row (TradingView Style) */
@@ -1712,6 +1864,34 @@ body.theme-light .tv-wl-th:hover {
 }
 body.theme-light .tv-wl-row:hover {
   background-color: #f0f3fa;
+}
+
+/* Drag grip handle & reordering states */
+.tv-wl-drag-grip {
+  color: #4a5060;
+  cursor: grab;
+  opacity: 0.25;
+  transition: opacity 0.12s, color 0.12s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 3px;
+}
+.tv-wl-drag-grip:active {
+  cursor: grabbing;
+}
+.tv-wl-row:hover .tv-wl-drag-grip {
+  opacity: 0.9;
+  color: #787b86;
+}
+.tv-wl-row.dragging {
+  opacity: 0.35 !important;
+  background-color: rgba(41, 98, 255, 0.12) !important;
+  border: 1px dashed #2962ff !important;
+}
+.tv-wl-row.drag-over {
+  border-top: 2px solid #2962ff !important;
 }
 
 /* Active Row Outline Border (Matching TradingView SSI in user screenshot!) */
