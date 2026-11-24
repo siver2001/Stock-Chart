@@ -15,6 +15,7 @@ import {
   Plus,
   Cloud,
 } from 'lucide-react'
+import { StockLogo } from './TradingViewWatchlist'
 
 export const ALL_TIMEFRAME_GROUPS = [
   {
@@ -221,6 +222,7 @@ export default function TradingViewHeader({
           title="Tìm kiếm mã chứng khoán (Ctrl+K)"
         >
           <Search size={14} className="tv-icon-dim" />
+          <StockLogo symbol={activeSymbol} size="mini" />
           <span className="tv-symbol-ticker">{activeSymbol}</span>
           <span className="tv-symbol-exchange">HOSE</span>
           <ChevronDown size={13} className="tv-icon-dim" />

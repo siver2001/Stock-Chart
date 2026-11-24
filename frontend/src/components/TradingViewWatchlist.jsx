@@ -19,6 +19,8 @@ import {
   FolderPlus,
   GripVertical,
   AlertCircle,
+  Eye,
+  ExternalLink,
 } from 'lucide-react'
 import { fetchQuotes, searchSymbols } from '../api/stockApi'
 import { syncWatchlistCloud, fetchWatchlistCloud } from '../services/cloudStorage'
@@ -114,16 +116,32 @@ export const STOCK_BRANDS = {
 }
 
 export function getStockBrand(sym = '') {
-  if (STOCK_BRANDS[sym]) return STOCK_BRANDS[sym]
+  if (STOCK_BRANDS[sym]) {
+    const b = STOCK_BRANDS[sym]
+    return {
+      bg: b.bg,
+      text: b.text,
+      label: b.label,
+      bgColor: b.bg,
+      color: b.text,
+      initials: b.label,
+      name: sym,
+    }
+  }
   let hash = 0
   for (let i = 0; i < sym.length; i++) {
     hash = sym.charCodeAt(i) + ((hash << 5) - hash)
   }
   const hue = Math.abs(hash) % 360
+  const bg = `hsl(${hue}, 65%, 42%)`
   return {
-    bg: `hsl(${hue}, 65%, 42%)`,
+    bg,
     text: '#ffffff',
     label: sym.slice(0, 3),
+    bgColor: bg,
+    color: '#ffffff',
+    initials: sym.slice(0, 3),
+    name: sym,
   }
 }
 
@@ -143,10 +161,13 @@ export function StockLogo({ symbol = '', size = 'normal', className = '' }) {
     return (
       <div
         className={`tv-wl-logo-avatar ${size} ${className}`}
-        style={{ backgroundColor: brand.bg, color: brand.text }}
-        title={cleanSym}
+        style={{
+          backgroundColor: brand.bg || brand.bgColor || '#1e222d',
+          color: brand.text || brand.color || '#ffffff',
+        }}
+        title={`${cleanSym} - ${brand.name || cleanSym}`}
       >
-        <span>{brand.label}</span>
+        <span>{brand.label || brand.initials || cleanSym.slice(0, 3)}</span>
       </div>
     )
   }
@@ -154,7 +175,7 @@ export function StockLogo({ symbol = '', size = 'normal', className = '' }) {
   return (
     <div className={`tv-wl-logo-avatar ${size} ${className} has-img`} title={cleanSym}>
       <img
-        src={`https://tcinvest.tcbs.com.vn/assets/images/tickers/${cleanSym}.png`}
+        src={`https://cdn.simplize.vn/simplizevn/logo/${cleanSym}.jpeg`}
         alt={cleanSym}
         className="tv-wl-logo-img"
         loading="lazy"
@@ -597,17 +618,41 @@ export default function TradingViewWatchlist({
     addInputRef.current?.focus()
   }
 
+  // Quick view chart directly from search or click
+  const handleViewStock = (targetTicker) => {
+    const sym = (targetTicker || '').trim().toUpperCase()
+    if (!sym) return
+    onSelectSymbol(sym)
+    setShowSuggestions(false)
+    setSuggestions([])
+    setNewTicker('')
+    setAddError('')
+    setTimeout(() => {
+      const rowEl = document.getElementById(`tv-wl-row-${sym}`)
+      if (rowEl) {
+        rowEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+    }, 60)
+  }
+
   const handleAdd = (e) => {
     e.preventDefault()
-    if (!newTicker.trim()) return
+    const query = newTicker.trim().toUpperCase()
+    if (!query) return
+
+    // If the ticker already exists in watchlist, immediately view its chart!
+    if (symbols.includes(query)) {
+      handleViewStock(query)
+      return
+    }
 
     const exact = suggestions.find(
-      (s) => (s.ticker || s.symbol || '').toUpperCase() === newTicker.trim().toUpperCase()
+      (s) => (s.ticker || s.symbol || '').toUpperCase() === query
     )
     if (exact) {
       addValidatedTicker(exact.ticker || exact.symbol)
     } else {
-      addValidatedTicker(newTicker)
+      addValidatedTicker(query)
     }
   }
 
@@ -1058,15 +1103,18 @@ export default function TradingViewWatchlist({
             <div className="tv-wl-suggestions-popover" ref={suggestionsRef}>
               <div className="tv-wl-sug-header">Gợi ý mã cổ phiếu ({suggestions.length})</div>
               {suggestions.map((item) => {
-                const itemTicker = item.ticker || item.symbol
-                const brand = getStockBrand(itemTicker)
+                const itemTicker = (item.ticker || item.symbol || '').toUpperCase()
+                const isAlreadyInWatchlist = symbols.includes(itemTicker)
                 return (
                   <div
                     key={itemTicker}
-                    className="tv-wl-sug-item"
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      handleSelectSuggestion(itemTicker)
+                    className={`tv-wl-sug-item ${isAlreadyInWatchlist ? 'is-in-list' : ''}`}
+                    onClick={() => {
+                      if (isAlreadyInWatchlist) {
+                        handleViewStock(itemTicker)
+                      } else {
+                        handleSelectSuggestion(itemTicker)
+                      }
                     }}
                   >
                     <div className="tv-wl-sug-left">
@@ -1074,7 +1122,56 @@ export default function TradingViewWatchlist({
                       <span className="tv-wl-sug-ticker">{itemTicker}</span>
                       <span className="tv-wl-sug-name">{item.name}</span>
                     </div>
-                    <span className="tv-wl-sug-exchange">{item.exchange || 'HOSE'}</span>
+
+                    <div className="tv-wl-sug-right">
+                      <span className="tv-wl-sug-exchange">{item.exchange || 'HOSE'}</span>
+                      {isAlreadyInWatchlist ? (
+                        <div className="tv-wl-sug-actions">
+                          <span className="tv-wl-sug-badge in-list" title="Mã này đã có trong danh sách theo dõi">
+                            Đã có
+                          </span>
+                          <button
+                            type="button"
+                            className="tv-wl-sug-btn-view"
+                            title={`Xem ngay biểu đồ ${itemTicker}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleViewStock(itemTicker)
+                            }}
+                          >
+                            <Eye size={12} />
+                            <span>Xem</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="tv-wl-sug-actions">
+                          <button
+                            type="button"
+                            className="tv-wl-sug-btn-add"
+                            title={`Thêm ${itemTicker} vào danh sách`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleSelectSuggestion(itemTicker)
+                            }}
+                          >
+                            <Plus size={12} />
+                            <span>Thêm</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="tv-wl-sug-btn-view"
+                            title={`Xem ngay biểu đồ ${itemTicker}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleViewStock(itemTicker)
+                            }}
+                          >
+                            <Eye size={12} />
+                            <span>Xem</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -1202,6 +1299,7 @@ export default function TradingViewWatchlist({
             return (
               <div
                 key={sym}
+                id={`tv-wl-row-${sym}`}
                 className={`tv-wl-row ${isActive ? 'active' : ''} ${draggedIndex === idx ? 'dragging' : ''} ${dragOverIndex === idx && draggedIndex !== idx ? 'drag-over' : ''}`}
                 draggable={true}
                 onDragStart={(e) => handleDragStart(e, idx)}
