@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Search, X, TrendingUp, Building2 } from 'lucide-react'
 import { searchSymbols } from '../api/stockApi'
+import { StockLogo } from './TradingViewWatchlist'
 
 export default function SymbolSearchModal({ isOpen, onClose, onSelect, currentSymbol }) {
   const [query, setQuery] = useState('')
@@ -143,8 +144,8 @@ export default function SymbolSearchModal({ isOpen, onClose, onSelect, currentSy
                   }}
                 >
                   <div className="tv-symbol-row-left">
-                    <div className={`tv-ticker-badge ${isIndex ? 'index-badge' : ''}`}>
-                      {isIndex ? <TrendingUp size={14} /> : <Building2 size={14} />}
+                    <div className="tv-ticker-badge-wrap">
+                      <StockLogo symbol={item.ticker} size="mini" />
                     </div>
                     <div className="tv-ticker-info">
                       <div className="tv-ticker-code">{item.ticker}</div>

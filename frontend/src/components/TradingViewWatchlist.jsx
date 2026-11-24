@@ -127,6 +127,43 @@ export function getStockBrand(sym = '') {
   }
 }
 
+// Real Company Logo Component with high-fidelity fallback to brand circle
+export function StockLogo({ symbol = '', size = 'normal', className = '' }) {
+  const [loadFailed, setLoadFailed] = useState(false)
+  const cleanSym = (symbol || '').trim().toUpperCase()
+  const brand = getStockBrand(cleanSym)
+
+  useEffect(() => {
+    setLoadFailed(false)
+  }, [cleanSym])
+
+  if (!cleanSym) return null
+
+  if (loadFailed) {
+    return (
+      <div
+        className={`tv-wl-logo-avatar ${size} ${className}`}
+        style={{ backgroundColor: brand.bg, color: brand.text }}
+        title={cleanSym}
+      >
+        <span>{brand.label}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`tv-wl-logo-avatar ${size} ${className} has-img`} title={cleanSym}>
+      <img
+        src={`https://tcinvest.tcbs.com.vn/assets/images/tickers/${cleanSym}.png`}
+        alt={cleanSym}
+        className="tv-wl-logo-img"
+        loading="lazy"
+        onError={() => setLoadFailed(true)}
+      />
+    </div>
+  )
+}
+
 // Helper to verify if Vietnam stock market is currently in open trading hours
 export function isVietnamMarketOpen() {
   const now = new Date()
@@ -1033,12 +1070,7 @@ export default function TradingViewWatchlist({
                     }}
                   >
                     <div className="tv-wl-sug-left">
-                      <div
-                        className="tv-wl-logo-avatar mini"
-                        style={{ backgroundColor: brand.bg, color: brand.text }}
-                      >
-                        <span>{brand.label}</span>
-                      </div>
+                      <StockLogo symbol={itemTicker} size="mini" />
                       <span className="tv-wl-sug-ticker">{itemTicker}</span>
                       <span className="tv-wl-sug-name">{item.name}</span>
                     </div>
@@ -1240,14 +1272,9 @@ export default function TradingViewWatchlist({
                     </div>
                   )}
 
-                  {/* Circular Logo Avatar */}
+                  {/* Circular Real Logo Avatar */}
                   {visibleColumns.logo && (
-                    <div
-                      className="tv-wl-logo-avatar"
-                      style={{ backgroundColor: brand.bg, color: brand.text }}
-                    >
-                      <span>{brand.label}</span>
-                    </div>
+                    <StockLogo symbol={sym} />
                   )}
 
                   {/* Symbol Ticker Name */}
@@ -1313,8 +1340,11 @@ export default function TradingViewWatchlist({
         <div className="tv-watchlist-detail-card">
           <div className="tv-detail-title-row">
             <div className="tv-detail-ticker-group">
-              <span className="tv-detail-ticker">{activeSymbol}</span>
-              <span className="tv-detail-tf">1D · HOSE</span>
+              <StockLogo symbol={activeSymbol} size="card" />
+              <div className="tv-detail-ticker-sub">
+                <span className="tv-detail-ticker">{activeSymbol}</span>
+                <span className="tv-detail-tf">1D · HOSE</span>
+              </div>
             </div>
             <span className={`tv-detail-change ${isActiveUp ? 'up' : 'down'}`}>
               {isActiveUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
