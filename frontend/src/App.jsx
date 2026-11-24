@@ -15,7 +15,14 @@ import SelectedOverlayToolbar from './components/SelectedOverlayToolbar'
 import RealtimeMarketBar from './components/RealtimeMarketBar'
 import IndicatorSettingsModal from './components/IndicatorSettingsModal'
 import { volumeOverlayConfig } from './indicators/volumeOverlay'
-import { syncDrawingsCloud, fetchDrawingsCloud, deleteDrawingsCloud } from './services/cloudStorage'
+import {
+  syncDrawingsCloud,
+  fetchDrawingsCloud,
+  deleteDrawingsCloud,
+  syncChartSettingsCloud,
+  fetchChartSettingsCloud,
+} from './services/cloudStorage'
+import CloudSyncModal from './components/CloudSyncModal'
 import { isCloudEnabled } from './lib/supabase'
 
 export const STORAGE_KEYS = {
@@ -242,6 +249,7 @@ export default function App() {
   // Modals & Drawers state
   const [isSymbolModalOpen, setIsSymbolModalOpen] = useState(false)
   const [isIndicatorsModalOpen, setIsIndicatorsModalOpen] = useState(false)
+  const [isCloudSyncModalOpen, setIsCloudSyncModalOpen] = useState(false)
   const [showWatchlist, setShowWatchlist] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.SHOW_WATCHLIST)
     return saved !== null ? saved === 'true' : true
@@ -471,9 +479,11 @@ export default function App() {
           fetchDrawingsCloud(sym)
             .then((cloudData) => {
               if (cloudData && Array.isArray(cloudData.overlays)) {
-                // Nếu Cloud có nét vẽ mà local chưa có hoặc số lượng khác
-                if (cloudData.overlays.length > 0 && (!list || list.length === 0)) {
-                  localStorage.setItem(storageKey, JSON.stringify(cloudData.overlays))
+                const cloudJson = JSON.stringify(cloudData.overlays)
+                const localJson = JSON.stringify(list || [])
+                // Nếu Cloud có nét vẽ và khác với bản lưu local hiện tại
+                if (cloudData.overlays.length > 0 && cloudJson !== localJson) {
+                  localStorage.setItem(storageKey, cloudJson)
                   if (activeSymbolRef.current.toUpperCase() === sym.toUpperCase()) {
                     renderOverlays(cloudData.overlays)
                   }
@@ -965,6 +975,23 @@ export default function App() {
       setActiveIndicators(createdActive)
       setHiddenIndicators(savedHidden)
 
+      // Background check Supabase Cloud for updated indicators across devices
+      if (isCloudEnabled()) {
+        fetchChartSettingsCloud()
+          .then((cloudSettings) => {
+            if (!cloudSettings) return
+            const rawLocal = localStorage.getItem(STORAGE_KEYS.ACTIVE_INDICATORS)
+            if (!rawLocal && Array.isArray(cloudSettings.activeIndicators) && cloudSettings.activeIndicators.length > 0) {
+              applyCloudIndicators(
+                cloudSettings.activeIndicators,
+                cloudSettings.hiddenIndicators,
+                cloudSettings.indicatorParams
+              )
+            }
+          })
+          .catch(() => {})
+      }
+
       // Subscribe for live polling
       datafeed.subscribe(activeSymbol, activePeriod, (bar) => {
         chart.updateData(bar)
@@ -1246,7 +1273,10 @@ export default function App() {
     }
   }
 
-  // Persist Active & Hidden Indicators to localStorage (cái gì đang bật thì lưu, cái gì tắt rồi thì không lưu)
+  // Debounce ref for syncing chart settings & indicators to Supabase Cloud
+  const chartSettingsTimerRef = useRef(null)
+
+  // Persist Active & Hidden Indicators to localStorage & Supabase Cloud
   const persistActiveIndicators = (indicators, hidden) => {
     try {
       const toSave = indicators.map((i) => ({ name: i.name, isOverlay: i.isOverlay }))
@@ -1254,10 +1284,108 @@ export default function App() {
       if (hidden !== undefined) {
         localStorage.setItem(STORAGE_KEYS.HIDDEN_INDICATORS, JSON.stringify(hidden))
       }
+
+      // Debounced Cloud Sync for chart settings (1.2s sau thao tác cuối)
+      if (isCloudEnabled()) {
+        if (chartSettingsTimerRef.current) clearTimeout(chartSettingsTimerRef.current)
+        chartSettingsTimerRef.current = setTimeout(() => {
+          let pMap = {}
+          try {
+            const rawP = localStorage.getItem(STORAGE_KEYS.INDICATOR_PARAMS)
+            if (rawP) pMap = JSON.parse(rawP) || {}
+          } catch {}
+          syncChartSettingsCloud({
+            theme,
+            chartType,
+            activeIndicators: toSave,
+            hiddenIndicators: hidden !== undefined ? hidden : hiddenIndicators,
+            indicatorParams: pMap,
+          })
+        }, 1200)
+      }
     } catch (e) {
       console.warn('Failed to persist active indicators:', e)
     }
   }
+
+  // Khôi phục chỉ báo từ Supabase Cloud vào biểu đồ
+  const applyCloudIndicators = useCallback(
+    (targetInds, targetHidden = [], targetParams = {}) => {
+      if (!chartInstanceRef.current || !Array.isArray(targetInds)) return
+      const chart = chartInstanceRef.current
+
+      // 1. Gỡ sạch các indicator đang hiển thị
+      activeIndicators.forEach((i) => {
+        if (i.paneId) {
+          try { chart.removeIndicator(i.paneId, i.name) } catch {}
+        }
+      })
+
+      // 2. Tạo mới theo danh sách từ Cloud
+      const created = []
+      for (const item of targetInds) {
+        if (!item || !item.name) continue
+        const indName = item.name
+        const meta = AVAILABLE_INDICATORS.find((i) => i.name === indName)
+        const isOverlay = meta ? meta.isOverlay : (item.isOverlay ?? true)
+        const isHidden = Array.isArray(targetHidden) && targetHidden.includes(indName)
+
+        if (!isHidden) {
+          let paneId = null
+          if (isOverlay) {
+            paneId = chart.createIndicator(indName, true, { id: 'candle_pane' })
+          } else {
+            const paneHeight = indName === 'VOL' ? 95 : 105
+            paneId = chart.createIndicator(indName, false, {
+              height: paneHeight,
+              dragEnabled: true,
+              minHeight: 40,
+              gap: { top: 0.12, bottom: 0.08 },
+            })
+          }
+          if (paneId) {
+            const customParams = targetParams[indName]
+            if (customParams && Array.isArray(customParams)) {
+              try {
+                chart.overrideIndicator({ name: indName, calcParams: customParams }, paneId)
+              } catch {}
+            }
+            created.push({ name: indName, paneId, isOverlay })
+          }
+        } else {
+          created.push({ name: indName, paneId: null, isOverlay })
+        }
+      }
+
+      setActiveIndicators(created)
+      setHiddenIndicators(targetHidden || [])
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACTIVE_INDICATORS, JSON.stringify(targetInds))
+        localStorage.setItem(STORAGE_KEYS.HIDDEN_INDICATORS, JSON.stringify(targetHidden || []))
+        if (targetParams && Object.keys(targetParams).length > 0) {
+          localStorage.setItem(STORAGE_KEYS.INDICATOR_PARAMS, JSON.stringify(targetParams))
+        }
+      } catch {}
+    },
+    [activeIndicators]
+  )
+
+  // Lắng nghe sự kiện đổi Sync Key hoặc ép đồng bộ để tải lại chỉ báo
+  useEffect(() => {
+    const handleReload = () => {
+      if (!isCloudEnabled()) return
+      fetchChartSettingsCloud().then((cloudSettings) => {
+        if (!cloudSettings) return
+        if (Array.isArray(cloudSettings.activeIndicators) && cloudSettings.activeIndicators.length > 0) {
+          applyCloudIndicators(cloudSettings.activeIndicators, cloudSettings.hiddenIndicators, cloudSettings.indicatorParams)
+        }
+      })
+    }
+    window.addEventListener('vn_stock_reload_cloud_indicators', handleReload)
+    return () => {
+      window.removeEventListener('vn_stock_reload_cloud_indicators', handleReload)
+    }
+  }, [applyCloudIndicators])
 
   // Add / Remove Indicator
   const handleToggleIndicator = (indicatorName) => {
@@ -1648,6 +1776,7 @@ export default function App() {
         onScreenshot={handleScreenshot}
         drawingsCount={drawingsCount}
         cloudSyncStatus={cloudSyncStatus}
+        onOpenCloudSync={() => setIsCloudSyncModalOpen(true)}
       />
 
       {/* Main Workspace */}
@@ -1775,6 +1904,19 @@ export default function App() {
         chartInstance={chartInstanceRef.current}
         onApplySettings={() => {
           setSettingsUpdateTick((t) => t + 1)
+          persistActiveIndicators(activeIndicators, hiddenIndicators)
+        }}
+      />
+
+      {/* Cloud Sync Modal */}
+      <CloudSyncModal
+        isOpen={isCloudSyncModalOpen}
+        onClose={() => setIsCloudSyncModalOpen(false)}
+        activeSymbol={activeSymbol}
+        drawingsCount={drawingsCount}
+        activeIndicatorsCount={activeIndicators.length}
+        onForceSync={() => {
+          restoreDrawingsForSymbol(activeSymbolRef.current)
         }}
       />
     </div>

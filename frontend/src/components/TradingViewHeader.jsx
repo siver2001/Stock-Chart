@@ -94,6 +94,7 @@ export default function TradingViewHeader({
   onScreenshot,
   drawingsCount = 0,
   cloudSyncStatus = 'local',
+  onOpenCloudSync,
 }) {
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false)
   const [showChartTypeDropdown, setShowChartTypeDropdown] = useState(false)
@@ -416,12 +417,14 @@ export default function TradingViewHeader({
         {/* Auto-saved Drawings Indicator / Cloud Sync Status */}
         <div
           className={`tv-drawings-save-status ${cloudSyncStatus === 'saving' ? 'is-saving' : ''}`}
+          onClick={onOpenCloudSync}
+          style={{ cursor: 'pointer' }}
           title={
             cloudSyncStatus === 'synced'
-              ? `Đã đồng bộ hóa Cloud an toàn (Supabase) - ${drawingsCount} nét vẽ của mã ${activeSymbol}`
+              ? `Đã đồng bộ hóa Cloud an toàn (Supabase) - ${drawingsCount} nét vẽ của mã ${activeSymbol}. Bấm để xem thông tin đồng bộ đa thiết bị.`
               : cloudSyncStatus === 'saving'
               ? 'Đang đồng bộ nét vẽ lên Supabase Cloud...'
-              : `Đã lưu cục bộ trình duyệt (${drawingsCount} nét vẽ) - Thêm SUPABASE_URL & ANON_KEY trong .env để bật Cloud Sync`
+              : `Đã lưu cục bộ trình duyệt (${drawingsCount} nét vẽ). Bấm để mở bảng đồng bộ Cloud.`
           }
         >
           {cloudSyncStatus === 'synced' ? (

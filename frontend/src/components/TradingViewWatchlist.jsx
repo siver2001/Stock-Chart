@@ -339,29 +339,54 @@ export default function TradingViewWatchlist({
     }
   }, [])
 
-  // Background Cloud Restore on mount
-  useEffect(() => {
-    let isMounted = true
-    if (isCloudEnabled()) {
-      fetchWatchlistCloud().then((cloudData) => {
-        if (!isMounted || !cloudData) return
-        if (Array.isArray(cloudData.symbols) && cloudData.symbols.length > 0) {
-          setSymbols(cloudData.symbols)
-        }
-        if (cloudData.flags && typeof cloudData.flags === 'object') {
-          setSymbolFlags(cloudData.flags)
-        }
-      })
+  // Background Cloud Restore on mount & Sync Key change listener
+  const hasLoadedCloudRef = useRef(false)
+  const isFirstRenderRef = useRef(true)
+
+  const reloadFromCloud = useCallback(() => {
+    if (!isCloudEnabled()) {
+      hasLoadedCloudRef.current = true
+      return
     }
-    return () => {
-      isMounted = false
-    }
+    fetchWatchlistCloud().then((cloudData) => {
+      if (!cloudData) {
+        hasLoadedCloudRef.current = true
+        return
+      }
+      if (Array.isArray(cloudData.symbols) && cloudData.symbols.length > 0) {
+        setSymbols(cloudData.symbols)
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData.symbols)) } catch {}
+      }
+      if (cloudData.flags && typeof cloudData.flags === 'object') {
+        setSymbolFlags(cloudData.flags)
+        try { localStorage.setItem(FLAGS_STORAGE_KEY, JSON.stringify(cloudData.flags)) } catch {}
+      }
+      hasLoadedCloudRef.current = true
+    }).catch(() => {
+      hasLoadedCloudRef.current = true
+    })
   }, [])
 
-  // Debounced Cloud Sync for Watchlist
+  useEffect(() => {
+    reloadFromCloud()
+
+    const handleSyncEvent = () => reloadFromCloud()
+    window.addEventListener('vn_stock_reload_cloud_watchlist', handleSyncEvent)
+    return () => {
+      window.removeEventListener('vn_stock_reload_cloud_watchlist', handleSyncEvent)
+    }
+  }, [reloadFromCloud])
+
+  // Debounced Cloud Sync for Watchlist (only after initial load has completed)
   const watchlistCloudTimerRef = useRef(null)
   useEffect(() => {
     if (!isCloudEnabled()) return
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false
+      return
+    }
+    if (!hasLoadedCloudRef.current) return
+
     if (watchlistCloudTimerRef.current) clearTimeout(watchlistCloudTimerRef.current)
     watchlistCloudTimerRef.current = setTimeout(() => {
       syncWatchlistCloud(symbols, symbolFlags)

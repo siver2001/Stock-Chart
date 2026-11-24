@@ -185,3 +185,100 @@ export async function fetchWatchlistCloud() {
     return null
   }
 }
+
+// ==============================================================================
+// 3. ĐỒNG BỘ CẤU HÌNH BIỂU ĐỒ & CHỈ BÁO KỸ THUẬT (CHART SETTINGS & INDICATORS)
+// ==============================================================================
+
+/**
+ * Lưu cấu hình chỉ báo và giao diện biểu đồ lên Cloud
+ */
+export async function syncChartSettingsCloud({
+  theme = 'dark',
+  chartType = 'candle_solid',
+  activeIndicators = [],
+  hiddenIndicators = [],
+  indicatorParams = {},
+  favoritePeriods = ['1m', '5m', '15m', '1H', '1D', '1W'],
+}) {
+  if (!isCloudEnabled() || !supabase) {
+    return { success: false, reason: 'cloud_disabled' }
+  }
+
+  try {
+    const deviceId = getDeviceId()
+    const mergedParams = {
+      ...(typeof indicatorParams === 'object' && indicatorParams !== null ? indicatorParams : {}),
+    }
+    if (Array.isArray(hiddenIndicators) && hiddenIndicators.length > 0) {
+      mergedParams._hidden = hiddenIndicators
+    }
+
+    const payload = {
+      device_id: deviceId,
+      theme: theme || 'dark',
+      chart_type: chartType || 'candle_solid',
+      active_indicators: Array.isArray(activeIndicators) ? activeIndicators : [],
+      indicator_params: mergedParams,
+      favorite_periods: Array.isArray(favoritePeriods) ? favoritePeriods : ['1m', '5m', '15m', '1H', '1D', '1W'],
+      updated_at: new Date().toISOString(),
+    }
+
+    const { error } = await supabase
+      .from('user_chart_settings')
+      .upsert(payload, { onConflict: 'device_id' })
+
+    if (error) {
+      console.error('[CloudSync] Lỗi lưu cấu hình biểu đồ lên Cloud:', error.message)
+      return { success: false, error }
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[CloudSync] Lỗi ngoại lệ khi lưu cấu hình biểu đồ:', err)
+    return { success: false, error: err }
+  }
+}
+
+/**
+ * Tải cấu hình chỉ báo và giao diện biểu đồ từ Cloud
+ */
+export async function fetchChartSettingsCloud() {
+  if (!isCloudEnabled() || !supabase) {
+    return null
+  }
+
+  try {
+    const deviceId = getDeviceId()
+    const { data, error } = await supabase
+      .from('user_chart_settings')
+      .select('*')
+      .eq('device_id', deviceId)
+      .maybeSingle()
+
+    if (error) {
+      console.warn('[CloudSync] Không thể lấy cấu hình biểu đồ từ Cloud:', error.message)
+      return null
+    }
+
+    if (data) {
+      const hidden = Array.isArray(data.indicator_params?._hidden)
+        ? data.indicator_params._hidden
+        : []
+      return {
+        theme: data.theme,
+        chartType: data.chart_type,
+        activeIndicators: Array.isArray(data.active_indicators) ? data.active_indicators : [],
+        hiddenIndicators: hidden,
+        indicatorParams: data.indicator_params || {},
+        favoritePeriods: data.favorite_periods || [],
+        updatedAt: data.updated_at,
+      }
+    }
+
+    return null
+  } catch (err) {
+    console.warn('[CloudSync] Lỗi tải cấu hình biểu đồ từ Cloud:', err)
+    return null
+  }
+}
