@@ -174,14 +174,7 @@ const getThemeStyles = (theme, chartType = 'candle_solid') => {
     },
     indicator: {
       tooltip: {
-        showRule: 'always',
-        showName: false,
-        showParams: false,
-        text: {
-          size: 11,
-          family: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace',
-          marginRight: 8,
-        },
+        showRule: 'none', // HTML ActiveIndicatorsBar renders cleanly without canvas duplicate overlap
       },
       ohlc: {
         upColor: '#089981',
@@ -1708,6 +1701,7 @@ export default function App() {
             hiddenIndicators={hiddenIndicators}
             onOpenSettings={(ind) => setSettingsIndicator(ind)}
             chartInstance={chartInstanceRef.current}
+            latestBar={latestBar}
           />
 
           {/* Selected Overlay Toolbar (Mini popup with delete button) */}

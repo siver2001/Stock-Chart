@@ -14,9 +14,18 @@ export default function FloatingFavoriteToolbar({
   const [pos, setPos] = useState(() => {
     try {
       const saved = localStorage.getItem('vn_fav_toolbar_pos')
-      if (saved) return JSON.parse(saved)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        // Ensure it doesn't collide with top-left indicators & OHLC (x < 300 && y < 150)
+        if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          if (parsed.x < 300 && parsed.y < 150) {
+            return { x: 380, y: 15 }
+          }
+          return parsed
+        }
+      }
     } catch {}
-    return { x: 90, y: 55 } // Default position near top-left of chart
+    return { x: 380, y: 15 } // Safe default away from top-left indicators
   })
 
   const [isDragging, setIsDragging] = useState(false)

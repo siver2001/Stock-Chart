@@ -1150,47 +1150,50 @@ body.theme-light .tv-overlay-action-btn:hover {
 /* 1. Overlays Legend on Main Candle Chart */
 .tv-overlay-indicators-legend {
   position: absolute;
-  top: 32px; /* Sits directly below symbol OHLC header */
-  left: 10px;
-  z-index: 12;
+  top: 26px; /* Sits cleanly below the candle OHLC header text */
+  left: 8px;
+  z-index: 10;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   pointer-events: none;
   user-select: none;
+  max-width: calc(100% - 320px);
 }
 
 /* 2. Sub-Pane Indicator Legend (Directly on each indicator sub-window) */
 .tv-subpane-indicators-legend {
   position: absolute;
-  left: 10px;
-  z-index: 12;
+  left: 8px;
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 6px;
   pointer-events: none;
   user-select: none;
   transition: top 0.15s ease-out;
+  max-width: calc(100% - 100px);
 }
 
-/* Individual Indicator Row: Muted/Chìm chìm style */
+/* Individual Indicator Row: Muted/Chìm chìm style matching TradingView */
 .tv-ind-legend-row {
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 5px 1px 4px;
+  padding: 1px 6px;
   border-radius: 3px;
   background-color: transparent;
   transition: background-color 0.12s ease, opacity 0.15s ease;
-  line-height: 18px;
+  height: 20px;
+  line-height: 20px;
 }
 .tv-ind-legend-row:hover {
-  background-color: rgba(30, 34, 45, 0.72);
+  background-color: rgba(30, 34, 45, 0.78);
   backdrop-filter: blur(4px);
 }
 body.theme-light .tv-ind-legend-row:hover {
-  background-color: rgba(255, 255, 255, 0.88);
+  background-color: rgba(255, 255, 255, 0.92);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
@@ -1233,7 +1236,7 @@ body.theme-light .tv-ind-legend-params {
   color: #9ca3af;
 }
 
-/* Action Buttons: 'Chìm chìm' - hidden until hovered */
+/* Action Buttons: 'Chìm chìm' - hidden until row is hovered */
 .tv-ind-legend-actions {
   display: inline-flex;
   align-items: center;
@@ -1279,6 +1282,22 @@ body.theme-light .tv-ind-legend-btn:hover {
 .tv-ind-legend-btn.tv-ind-btn-remove:hover {
   color: #f23645;
   background-color: rgba(242, 54, 69, 0.15);
+}
+
+/* Live Indicator Values */
+.tv-ind-legend-values {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+}
+.tv-ind-legend-val {
+  display: inline-block;
+  white-space: nowrap;
 }
 
 /* KlineCharts DOM element */
