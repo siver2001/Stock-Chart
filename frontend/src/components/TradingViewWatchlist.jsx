@@ -124,6 +124,17 @@ export function getStockBrand(sym = '') {
   }
 }
 
+// Helper to verify if Vietnam stock market is currently in open trading hours
+export function isVietnamMarketOpen() {
+  const now = new Date()
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000
+  const vnTime = new Date(utc + 3600000 * 7)
+  const day = vnTime.getDay()
+  if (day === 0 || day === 6) return false // Weekend
+  const mins = vnTime.getHours() * 60 + vnTime.getMinutes()
+  return (mins >= 540 && mins <= 690) || (mins >= 780 && mins <= 900)
+}
+
 export default function TradingViewWatchlist({
   activeSymbol,
   onSelectSymbol,
@@ -284,18 +295,22 @@ export default function TradingViewWatchlist({
       try {
         const data = await fetchQuotes(symbols)
         if (isMounted && data) {
+          const marketOpen = isVietnamMarketOpen()
           setQuotes((prev) => {
             const nextFlashes = {}
             let hasFlash = false
-            for (const [sym, q] of Object.entries(data)) {
-              const oldQ = prev[sym]
-              if (oldQ && oldQ.close != null && q.close != null) {
-                if (q.close > oldQ.close) {
-                  nextFlashes[sym] = 'up'
-                  hasFlash = true
-                } else if (q.close < oldQ.close) {
-                  nextFlashes[sym] = 'down'
-                  hasFlash = true
+            // Only trigger flash animations if the market is actually OPEN
+            if (marketOpen) {
+              for (const [sym, q] of Object.entries(data)) {
+                const oldQ = prev[sym]
+                if (oldQ && oldQ.close != null && q.close != null && oldQ.close !== q.close) {
+                  if (q.close > oldQ.close) {
+                    nextFlashes[sym] = 'up'
+                    hasFlash = true
+                  } else if (q.close < oldQ.close) {
+                    nextFlashes[sym] = 'down'
+                    hasFlash = true
+                  }
                 }
               }
             }
@@ -320,21 +335,33 @@ export default function TradingViewWatchlist({
     }
 
     loadQuotes()
-    const interval = setInterval(loadQuotes, 2000)
+    // Poll every 2.5s during market hours, or 15s when market is closed to prevent unnecessary churn
+    const pollInterval = isVietnamMarketOpen() ? 2500 : 15000
+    const interval = setInterval(loadQuotes, pollInterval)
     return () => {
       isMounted = false
       clearInterval(interval)
     }
   }, [symbols])
 
-  // Instantly reflect activeSymbol realtime latestBar
+  // Instantly reflect activeSymbol realtime latestBar (STRICTLY matching symbol to prevent cross-stock bleeding!)
   useEffect(() => {
-    if (activeSymbol && latestBar && latestBar.close != null) {
+    if (
+      activeSymbol &&
+      latestBar &&
+      latestBar.symbol &&
+      latestBar.symbol.toUpperCase() === activeSymbol.toUpperCase() &&
+      latestBar.close != null
+    ) {
       setQuotes((prev) => {
         const existing = prev[activeSymbol]
+        // If close price and volume haven't changed, skip re-render to avoid any UI jitter
+        if (existing && existing.close === latestBar.close && existing.volume === latestBar.volume) {
+          return prev
+        }
         const refPrice = latestBar.ref_price || existing?.ref_price || latestBar.open || latestBar.close
-        const diff = latestBar.close - refPrice
-        const pct = refPrice ? (diff / refPrice) * 100 : 0
+        const diff = latestBar.change != null ? latestBar.change : latestBar.close - refPrice
+        const pct = latestBar.pct_change != null ? latestBar.pct_change : (refPrice ? (diff / refPrice) * 100 : 0)
         return {
           ...prev,
           [activeSymbol]: {
@@ -491,9 +518,14 @@ export default function TradingViewWatchlist({
 
   // Active Symbol Detail
   const activeQuote = quotes[activeSymbol]
+  const isMatchingLatestBar = Boolean(
+    latestBar &&
+    latestBar.symbol &&
+    latestBar.symbol.toUpperCase() === (activeSymbol || '').toUpperCase()
+  )
   const activePriceChange = activeQuote
     ? activeQuote.pct_change
-    : latestBar && (latestBar.ref_price || latestBar.open)
+    : isMatchingLatestBar && (latestBar.ref_price || latestBar.open)
     ? ((latestBar.close - (latestBar.ref_price || latestBar.open)) / (latestBar.ref_price || latestBar.open)) * 100
     : 0
   const isActiveUp = activePriceChange >= 0
@@ -790,12 +822,18 @@ export default function TradingViewWatchlist({
             let pctChange = quote?.pct_change ?? 0
             let volume = quote?.volume
 
-            // If active and we have fresh latestBar from chart
-            if (isActive && latestBar && latestBar.close != null) {
+            // If active and we have fresh latestBar strictly belonging to this exact symbol
+            if (
+              isActive &&
+              latestBar &&
+              latestBar.symbol &&
+              latestBar.symbol.toUpperCase() === sym.toUpperCase() &&
+              latestBar.close != null
+            ) {
               price = latestBar.close
               const ref = latestBar.ref_price || quote?.ref_price || latestBar.open || latestBar.close
-              change = price - ref
-              pctChange = ref ? (change / ref) * 100 : 0
+              change = latestBar.change != null ? latestBar.change : price - ref
+              pctChange = latestBar.pct_change != null ? latestBar.pct_change : (ref ? (change / ref) * 100 : 0)
               if (latestBar.volume != null) volume = latestBar.volume
             }
 
@@ -940,7 +978,7 @@ export default function TradingViewWatchlist({
       </div>
 
       {/* 6. Selected Stock Detail Card at Bottom */}
-      {latestBar && (
+      {isMatchingLatestBar && latestBar && (
         <div className="tv-watchlist-detail-card">
           <div className="tv-detail-title-row">
             <div className="tv-detail-ticker-group">

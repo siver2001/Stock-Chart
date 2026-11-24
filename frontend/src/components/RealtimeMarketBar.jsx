@@ -101,11 +101,15 @@ export default function RealtimeMarketBar({ activeSymbol, activePeriod, latestBa
 
   const session = getVietnamMarketSession(currentTime)
 
+  // Ensure latestBar belongs to the current activeSymbol to prevent displaying stale/wrong stock numbers
+  const isMatchingBar = latestBar && (!latestBar.symbol || latestBar.symbol.toUpperCase() === (activeSymbol || '').toUpperCase())
+  const validBar = isMatchingBar ? latestBar : null
+
   // Format running bar timestamp
   let barTimeStr = '--:--:--'
   let barDateStr = '--/--/----'
-  if (latestBar && latestBar.timestamp) {
-    const bDate = new Date(latestBar.timestamp)
+  if (validBar && validBar.timestamp) {
+    const bDate = new Date(validBar.timestamp)
     barTimeStr = `${pad(bDate.getHours())}:${pad(bDate.getMinutes())}:${pad(bDate.getSeconds())}`
     barDateStr = `${pad(bDate.getDate())}/${pad(bDate.getMonth() + 1)}/${bDate.getFullYear()}`
   }
@@ -119,9 +123,9 @@ export default function RealtimeMarketBar({ activeSymbol, activePeriod, latestBa
     }).format(val)
   }
 
-  const refPrice = latestBar?.ref_price || latestBar?.open || 0
-  const priceDiff = latestBar && refPrice ? latestBar.close - refPrice : 0
-  const pctDiff = latestBar && refPrice ? (priceDiff / refPrice) * 100 : 0
+  const refPrice = validBar?.ref_price || validBar?.open || 0
+  const priceDiff = validBar && refPrice ? (validBar.change != null ? validBar.change : validBar.close - refPrice) : 0
+  const pctDiff = validBar && refPrice ? (validBar.pct_change != null ? validBar.pct_change : (priceDiff / refPrice) * 100) : 0
   const isUp = priceDiff >= 0
 
   return (
@@ -143,7 +147,7 @@ export default function RealtimeMarketBar({ activeSymbol, activePeriod, latestBa
       <div className="tv-rt-divider" />
 
       {/* Center Left: Live Bar Timestamp (Giờ phút giây của nến đang chạy) */}
-      {latestBar && (
+      {validBar && (
         <div className="tv-rt-bar-timestamp" title={`Mốc thời gian của nến ${activeSymbol} (${activePeriod.text})`}>
           <span className="tv-rt-label">Mốc nến:</span>
           <b className="tv-rt-val">{barTimeStr}</b>
@@ -151,14 +155,14 @@ export default function RealtimeMarketBar({ activeSymbol, activePeriod, latestBa
         </div>
       )}
 
-      {latestBar && <div className="tv-rt-divider" />}
+      {validBar && <div className="tv-rt-divider" />}
 
       {/* Center: Running Price & % */}
-      {latestBar && (
+      {validBar && (
         <div className="tv-rt-price-box">
           <span className="tv-rt-label">Giá khớp:</span>
           <b className={`tv-rt-price ${isUp ? 'up' : 'down'}`}>
-            {formatPrice(latestBar.close)}
+            {formatPrice(validBar.close)}
           </b>
           <span className={`tv-rt-change ${isUp ? 'up' : 'down'}`}>
             {isUp ? '+' : ''}

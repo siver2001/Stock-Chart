@@ -880,6 +880,7 @@ export default function App() {
         const diff = last.close - ref
         const pct = ref ? (diff / ref) * 100 : 0
         setLatestBar({
+          symbol: activeSymbol,
           ...last,
           ref_price: ref,
           change: diff,
@@ -969,6 +970,7 @@ export default function App() {
           const diff = bar.close - ref
           const pct = ref ? (diff / ref) * 100 : 0
           return {
+            symbol: activeSymbol,
             ...bar,
             ref_price: ref,
             change: diff,
@@ -1052,12 +1054,15 @@ export default function App() {
       const diff = last.close - ref
       const pct = ref ? (diff / ref) * 100 : 0
       setLatestBar({
+        symbol: ticker,
         ...last,
         ref_price: ref,
         change: diff,
         pct_change: pct,
       })
     } else {
+      // Clear latestBar immediately to prevent leaking old stock's bar during transition
+      setLatestBar(null)
       setIsChartLoading(true)
     }
 
@@ -1080,6 +1085,7 @@ export default function App() {
           const diff = last.close - ref
           const pct = ref ? (diff / ref) * 100 : 0
           setLatestBar({
+            symbol: ticker,
             ...last,
             ref_price: ref,
             change: diff,
@@ -1102,6 +1108,7 @@ export default function App() {
         const diff = bar.close - ref
         const pct = ref ? (diff / ref) * 100 : 0
         return {
+          symbol: ticker,
           ...bar,
           ref_price: ref,
           change: diff,
@@ -1147,6 +1154,7 @@ export default function App() {
       const diff = last.close - ref
       const pct = ref ? (diff / ref) * 100 : 0
       setLatestBar({
+        symbol: activeSymbolRef.current,
         ...last,
         ref_price: ref,
         change: diff,
@@ -1173,6 +1181,7 @@ export default function App() {
           const diff = last.close - ref
           const pct = ref ? (diff / ref) * 100 : 0
           setLatestBar({
+            symbol: activeSymbolRef.current,
             ...last,
             ref_price: ref,
             change: diff,
@@ -1194,6 +1203,7 @@ export default function App() {
         const diff = bar.close - ref
         const pct = ref ? (diff / ref) * 100 : 0
         return {
+          symbol: activeSymbolRef.current,
           ...bar,
           ref_price: ref,
           change: diff,

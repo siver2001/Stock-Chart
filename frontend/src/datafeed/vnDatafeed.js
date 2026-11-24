@@ -187,8 +187,10 @@ export class VNStockDatafeed {
     const timer = setInterval(async () => {
       try {
         const latest = await fetchLatest({ symbol: ticker, interval })
-        if (latest && callback) {
+        // Verify this subscription is still active before firing callback
+        if (latest && callback && this._subscribers.get(subKey) === timer) {
           callback({
+            symbol: ticker,
             timestamp: Number(latest.timestamp),
             open: Number(latest.open),
             high: Number(latest.high),
