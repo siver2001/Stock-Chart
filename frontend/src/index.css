@@ -1143,61 +1143,142 @@ body.theme-light .tv-overlay-action-btn:hover {
   overflow: hidden;
 }
 
-/* Active Indicators Bar (Legend with [X] close button) */
-.tv-active-indicators-bar {
+/* ==========================================================================
+   TRADINGVIEW INDICATOR LEGENDS (Overlays on chart vs Sub-pane indicators)
+   ========================================================================== */
+
+/* 1. Overlays Legend on Main Candle Chart */
+.tv-overlay-indicators-legend {
   position: absolute;
-  top: 8px;
-  left: 12px;
-  z-index: 10;
+  top: 32px; /* Sits directly below symbol OHLC header */
+  left: 10px;
+  z-index: 12;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  pointer-events: auto;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+  user-select: none;
 }
 
-.tv-ind-pill {
+/* 2. Sub-Pane Indicator Legend (Directly on each indicator sub-window) */
+.tv-subpane-indicators-legend {
+  position: absolute;
+  left: 10px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  user-select: none;
+  transition: top 0.15s ease-out;
+}
+
+/* Individual Indicator Row: Muted/Chìm chìm style */
+.tv-ind-legend-row {
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background-color: rgba(30, 34, 45, 0.85);
+  padding: 1px 5px 1px 4px;
+  border-radius: 3px;
+  background-color: transparent;
+  transition: background-color 0.12s ease, opacity 0.15s ease;
+  line-height: 18px;
+}
+.tv-ind-legend-row:hover {
+  background-color: rgba(30, 34, 45, 0.72);
   backdrop-filter: blur(4px);
-  border: 1px solid #2a2e39;
-  padding: 3px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #d1d4dc;
 }
-body.theme-light .tv-ind-pill {
-  background-color: rgba(248, 249, 253, 0.85);
-  border-color: #e0e3eb;
-  color: #131722;
-}
-.tv-ind-pill.hidden {
-  opacity: 0.5;
-}
-.tv-ind-pill-name {
-  color: #58a6ff;
+body.theme-light .tv-ind-legend-row:hover {
+  background-color: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
-.tv-ind-pill-btn {
+.tv-ind-legend-row.is-hidden {
+  opacity: 0.45;
+}
+
+/* Label: Title + Parameters */
+.tv-ind-legend-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.tv-ind-legend-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #848e9c;
+  letter-spacing: -0.1px;
+  transition: color 0.12s ease;
+}
+.tv-ind-legend-row:hover .tv-ind-legend-name {
+  color: #2962ff;
+}
+body.theme-light .tv-ind-legend-name {
+  color: #4b5563;
+}
+body.theme-light .tv-ind-legend-row:hover .tv-ind-legend-name {
+  color: #2563eb;
+}
+
+.tv-ind-legend-params {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #6b7280;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace;
+}
+body.theme-light .tv-ind-legend-params {
+  color: #9ca3af;
+}
+
+/* Action Buttons: 'Chìm chìm' - hidden until hovered */
+.tv-ind-legend-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  margin-left: 2px;
+}
+.tv-ind-legend-row:hover .tv-ind-legend-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Action Buttons (Eye, Settings, X) */
+.tv-ind-legend-btn {
   background: transparent;
   border: none;
   color: #787b86;
+  width: 19px;
+  height: 19px;
+  border-radius: 3px;
   cursor: pointer;
-  padding: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 2px;
+  transition: all 0.12s ease;
+  padding: 0;
 }
-.tv-ind-pill-btn:hover {
+.tv-ind-legend-btn:hover {
   color: #f0f3fa;
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.12);
 }
-.tv-ind-pill-close:hover {
+body.theme-light .tv-ind-legend-btn:hover {
+  color: #131722;
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.tv-ind-legend-btn.is-off {
+  color: #ef4444;
+}
+
+.tv-ind-legend-btn.tv-ind-btn-remove:hover {
   color: #f23645;
-  background-color: rgba(242, 54, 69, 0.2);
+  background-color: rgba(242, 54, 69, 0.15);
 }
 
 /* KlineCharts DOM element */

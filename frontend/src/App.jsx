@@ -173,6 +173,16 @@ const getThemeStyles = (theme, chartType = 'candle_solid') => {
       },
     },
     indicator: {
+      tooltip: {
+        showRule: 'always',
+        showName: false,
+        showParams: false,
+        text: {
+          size: 11,
+          family: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", monospace',
+          marginRight: 8,
+        },
+      },
       ohlc: {
         upColor: '#089981',
         downColor: '#f23645',
