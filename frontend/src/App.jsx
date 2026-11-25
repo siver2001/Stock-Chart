@@ -875,7 +875,7 @@ export default function App() {
     })
 
     const datafeed = new VNStockDatafeed((origin, ticker) => {
-      if (ticker) setActiveSymbol(ticker)
+      if (ticker && ticker === activeSymbolRef.current) setActiveSymbol(ticker)
     })
     datafeedRef.current = datafeed
 

@@ -99,7 +99,8 @@ export class VNStockDatafeed {
     })
   }
 
-  async getHistoryKLineData(symbol, period, from, to) {
+  async getHistoryKLineData(symbol, period, from, to, options = {}) {
+    const { isPrefetch = false } = options
     const interval = mapPeriodToInterval(period)
     const ticker = (symbol?.ticker || symbol || 'VNINDEX').toUpperCase()
     const key = `${ticker}_${interval}`
@@ -108,7 +109,7 @@ export class VNStockDatafeed {
     if (!from && !to) {
       const cached = this.getCachedData(symbol, period)
       if (cached && cached.length > 0) {
-        if (this.onDataOriginChange) {
+        if (!isPrefetch && this.onDataOriginChange) {
           const item = this._cache.get(key)
           this.onDataOriginChange(item?.origin || 'cache', ticker)
         }
@@ -170,7 +171,7 @@ export class VNStockDatafeed {
           }))
         }
 
-        if (this.onDataOriginChange) {
+        if (!isPrefetch && this.onDataOriginChange) {
           this.onDataOriginChange(origin, ticker)
         }
 
@@ -211,7 +212,7 @@ export class VNStockDatafeed {
       setTimeout(() => {
         // Chỉ nạp nếu vẫn chưa có
         if (!this._cache.has(key)) {
-          this.getHistoryKLineData(ticker, period).catch(() => {})
+          this.getHistoryKLineData(ticker, period, undefined, undefined, { isPrefetch: true }).catch(() => {})
         }
       }, delay)
 
