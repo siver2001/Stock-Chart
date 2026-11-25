@@ -24,6 +24,23 @@ const INDICATOR_TITLES = {
   ATR: 'ATR',
   OBV: 'OBV',
   VOLUME_PROFILE: 'Volume Profile',
+  STOCH_RSI: 'StochRSI',
+  WILLIAMS_VIX_FIX: 'CM VixFix',
+  STC: 'Schaff Trend Cycle',
+  CMF: 'Chaikin Money Flow',
+  TSI: 'True Strength Index',
+  UO: 'Ultimate Osc',
+  ELDER_RAY: 'Elder-Ray',
+  CMO: 'CMO',
+  FORCE_INDEX: 'Force Index',
+  CHOP: 'Choppiness Index',
+  VORTEX: 'Vortex',
+  RVI: 'RVI',
+  CCI: 'CCI',
+  WR: 'Williams %R',
+  AO: 'Awesome Osc',
+  ROC: 'ROC',
+  TRIX: 'TRIX',
 }
 
 function getIndicatorTitle(name) {

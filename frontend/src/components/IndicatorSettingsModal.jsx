@@ -51,6 +51,24 @@ export default function IndicatorSettingsModal({
     if (indName === 'VWAP') return [1, 2]
     if (indName === 'SQUEEZE_MOMENTUM') return [20, 2.0, 1.5]
     if (indName === 'WAVETREND') return [10, 21]
+    if (indName === 'STOCH_RSI') return [3, 3, 14, 14]
+    if (indName === 'WILLIAMS_VIX_FIX') return [22, 20, 2, 50]
+    if (indName === 'STC') return [10, 23, 50]
+    if (indName === 'CMF') return [20]
+    if (indName === 'TSI') return [25, 13, 13]
+    if (indName === 'UO') return [7, 14, 28]
+    if (indName === 'ELDER_RAY') return [13]
+    if (indName === 'CMO') return [14]
+    if (indName === 'FORCE_INDEX') return [13]
+    if (indName === 'CHOP') return [14]
+    if (indName === 'VORTEX') return [14]
+    if (indName === 'RVI') return [10]
+    if (indName === 'ATR') return [14]
+    if (indName === 'CCI') return [20]
+    if (indName === 'WR') return [14]
+    if (indName === 'AO') return [5, 34]
+    if (indName === 'ROC') return [12]
+    if (indName === 'TRIX') return [12, 9]
     return []
   })
 
@@ -195,6 +213,24 @@ export default function IndicatorSettingsModal({
       case 'OBV': return 'Chỉ số khối lượng cân bằng (OBV)'
       case 'SQUEEZE_MOMENTUM': return 'Squeeze Momentum Indicator [LazyBear] (Top 1 TV)'
       case 'WAVETREND': return 'WaveTrend Oscillator [LazyBear] (Top 3 TV)'
+      case 'STOCH_RSI': return 'Stochastic RSI (StochRSI)'
+      case 'WILLIAMS_VIX_FIX': return 'CM Williams Vix Fix (Bắt đáy Top 2 TV)'
+      case 'STC': return 'Schaff Trend Cycle (STC)'
+      case 'CMF': return 'Chaikin Money Flow (CMF - Dòng tiền)'
+      case 'TSI': return 'True Strength Index (TSI)'
+      case 'UO': return 'Ultimate Oscillator (UO)'
+      case 'ELDER_RAY': return 'Elder-Ray Index (Bull & Bear Power)'
+      case 'CMO': return 'Chande Momentum Oscillator (CMO)'
+      case 'FORCE_INDEX': return "Elder's Force Index (EFI)"
+      case 'CHOP': return 'Choppiness Index (CHOP)'
+      case 'VORTEX': return 'Vortex Indicator (VI+ / VI-)'
+      case 'RVI': return 'Relative Vigor Index (RVI)'
+      case 'ATR': return 'Average True Range (ATR)'
+      case 'CCI': return 'Commodity Channel Index (CCI)'
+      case 'WR': return 'Williams %R'
+      case 'AO': return 'Awesome Oscillator (AO)'
+      case 'ROC': return 'Rate of Change (ROC)'
+      case 'TRIX': return 'TRIX (Triple Exponential Average)'
       default: return `Chỉ báo ${indName}`
     }
   }

@@ -474,3 +474,264 @@ def attach_all_indicators(
     sqz = compute_squeeze_momentum(res, sqz_length)
     wt = compute_wavetrend(res, wt_chlen, wt_avglen)
     return pd.concat([res, m, a, w, st, sqz, wt], axis=1)
+
+
+def compute_extra_indicator_signals(df: pd.DataFrame, indicator_names: list) -> dict:
+    """
+    Compute (bull_mask, bear_mask) boolean numpy arrays for any of the 22+ TradingView
+    sub-pane indicators requested in backtests (exact parity with frontend TradingView formulas).
+    """
+    if not indicator_names:
+        return {}
+
+    names = {str(x).strip().upper() for x in indicator_names if x}
+    n = len(df)
+    open_s = df["open"].astype(float)
+    high_s = df["high"].astype(float)
+    low_s = df["low"].astype(float)
+    close_s = df["close"].astype(float)
+    vol_s = df["volume"].astype(float).fillna(0.0)
+
+    prev_close = close_s.shift(1).fillna(close_s)
+    tr_s = np.maximum(
+        high_s - low_s,
+        np.maximum((high_s - prev_close).abs(), (low_s - prev_close).abs()),
+    )
+
+    signals = {}
+
+    def _pack(bull_series, bear_series):
+        return (
+            pd.Series(bull_series, index=df.index).fillna(False).to_numpy(dtype=bool),
+            pd.Series(bear_series, index=df.index).fillna(False).to_numpy(dtype=bool),
+        )
+
+    def _wilder_rsi(series: pd.Series, period: int = 14) -> pd.Series:
+        vals = series.to_numpy(dtype=float)
+        rsi = np.full(len(vals), np.nan)
+        avg_g, avg_l = 0.0, 0.0
+        for i in range(1, len(vals)):
+            diff = vals[i] - vals[i - 1]
+            g = diff if diff > 0 else 0.0
+            l = -diff if diff < 0 else 0.0
+            if i <= period:
+                avg_g += g
+                avg_l += l
+                if i == period:
+                    avg_g /= period
+                    avg_l /= period
+                    rsi[i] = 100.0 if avg_l == 0 else 100.0 - 100.0 / (1.0 + avg_g / avg_l)
+            else:
+                avg_g = (avg_g * (period - 1) + g) / period
+                avg_l = (avg_l * (period - 1) + l) / period
+                rsi[i] = 100.0 if avg_l == 0 else 100.0 - 100.0 / (1.0 + avg_g / avg_l)
+        return pd.Series(rsi, index=series.index)
+
+    if "RSI" in names or "STOCH_RSI" in names:
+        rsi14 = _wilder_rsi(close_s, 14)
+        if "RSI" in names:
+            signals["RSI"] = _pack(
+                ((rsi14 > 50) & (rsi14 < 75)) | ((rsi14 > 30) & (rsi14.shift(1) <= 30)),
+                ((rsi14 < 70) & (rsi14.shift(1) >= 70)) | (rsi14 < 45),
+            )
+        if "STOCH_RSI" in names:
+            lo = rsi14.rolling(14, min_periods=14).min()
+            hi = rsi14.rolling(14, min_periods=14).max()
+            stoch = np.where((hi - lo) > 0, (rsi14 - lo) / (hi - lo) * 100.0, 50.0)
+            k = pd.Series(stoch, index=df.index).rolling(3, min_periods=3).mean()
+            d = k.rolling(3, min_periods=3).mean()
+            signals["STOCH_RSI"] = _pack(
+                (k > d) & (k < 80.0),
+                (k < d) & (k > 35.0),
+            )
+
+    if "WILLIAMS_VIX_FIX" in names:
+        max_c = close_s.rolling(22, min_periods=22).max()
+        wvf = np.where(max_c > 0, (max_c - low_s) / max_c * 100.0, 0.0)
+        wvf_s = pd.Series(wvf, index=df.index)
+        mid = wvf_s.rolling(20, min_periods=20).mean()
+        sd = wvf_s.rolling(20, min_periods=20).std(ddof=0)
+        upper = mid + 2.0 * sd
+        range_hi = wvf_s.rolling(50, min_periods=22).max() * 0.85
+        is_bottom = (wvf_s >= upper) | (wvf_s >= range_hi)
+        ema10 = calc_ema(close_s, 10)
+        ema20 = calc_ema(close_s, 20)
+        signals["WILLIAMS_VIX_FIX"] = _pack(
+            is_bottom | (is_bottom.shift(1, fill_value=False) & (close_s >= close_s.shift(1))),
+            (close_s < ema10) & (ema10 < ema10.shift(1)) & (close_s < ema20),
+        )
+
+    if "STC" in names:
+        macd = calc_ema(close_s, 23) - calc_ema(close_s, 50)
+        m_arr = macd.to_numpy(dtype=float)
+        f1 = np.zeros(n)
+        pf = np.zeros(n)
+        f2 = np.zeros(n)
+        pff = np.full(n, np.nan)
+        length = 10
+        factor = 0.5
+        for i in range(length - 1, n):
+            if np.isnan(m_arr[i]):
+                continue
+            win = m_arr[i - length + 1 : i + 1]
+            win_valid = win[~np.isnan(win)]
+            if len(win_valid) == 0:
+                continue
+            lo, hi = np.min(win_valid), np.max(win_valid)
+            f1[i] = ((m_arr[i] - lo) / (hi - lo) * 100.0) if hi > lo else f1[i - 1]
+            pf[i] = pf[i - 1] + factor * (f1[i] - pf[i - 1]) if i > 0 else f1[i]
+            pf_win = pf[i - length + 1 : i + 1]
+            lo2, hi2 = np.min(pf_win), np.max(pf_win)
+            f2[i] = ((pf[i] - lo2) / (hi2 - lo2) * 100.0) if hi2 > lo2 else f2[i - 1]
+            prev = f2[i] if np.isnan(pff[i - 1]) else pff[i - 1]
+            pff[i] = prev + factor * (f2[i] - prev)
+        stc_s = pd.Series(pff, index=df.index)
+        signals["STC"] = _pack(
+            (stc_s > 25.0) & (stc_s >= stc_s.shift(1)) & (stc_s < 85.0),
+            (stc_s < 75.0) & (stc_s < stc_s.shift(1)),
+        )
+
+    if "CMF" in names:
+        hl = (high_s - low_s).replace(0, np.nan)
+        mfm = ((close_s - low_s) - (high_s - close_s)) / hl
+        mfv = mfm.fillna(0.0) * vol_s
+        cmf = mfv.rolling(20, min_periods=20).sum() / vol_s.rolling(20, min_periods=20).sum().replace(0, np.nan)
+        signals["CMF"] = _pack(cmf > 0.0, cmf < 0.0)
+
+    if "TSI" in names:
+        pc = close_s - prev_close
+        ds_pc = calc_ema(calc_ema(pc, 25), 13)
+        ds_apc = calc_ema(calc_ema(pc.abs(), 25), 13).replace(0, np.nan)
+        tsi = 100.0 * ds_pc / ds_apc
+        tsi_sig = calc_ema(tsi, 13)
+        signals["TSI"] = _pack(tsi > tsi_sig, tsi < tsi_sig)
+
+    if "UO" in names:
+        t_low = np.minimum(low_s, prev_close)
+        t_high = np.maximum(high_s, prev_close)
+        bp = close_s - t_low
+        tr_u = t_high - t_low
+        a7 = bp.rolling(7, min_periods=7).sum() / tr_u.rolling(7, min_periods=7).sum().replace(0, np.nan)
+        a14 = bp.rolling(14, min_periods=14).sum() / tr_u.rolling(14, min_periods=14).sum().replace(0, np.nan)
+        a28 = bp.rolling(28, min_periods=28).sum() / tr_u.rolling(28, min_periods=28).sum().replace(0, np.nan)
+        uo = 100.0 * (4.0 * a7 + 2.0 * a14 + a28) / 7.0
+        signals["UO"] = _pack(
+            ((uo > 30.0) & (uo.shift(1) <= 30.0)) | ((uo > 50.0) & (uo >= uo.shift(1))),
+            ((uo < 70.0) & (uo.shift(1) >= 70.0)) | (uo < 42.0),
+        )
+
+    if "ELDER_RAY" in names:
+        ema13 = calc_ema(close_s, 13)
+        bull = high_s - ema13
+        bear = low_s - ema13
+        signals["ELDER_RAY"] = _pack(
+            (bull > 0.0) & (bear >= bear.shift(1)),
+            bull < 0.0,
+        )
+
+    if "CMO" in names:
+        diff = close_s - prev_close
+        up = diff.clip(lower=0.0).rolling(14, min_periods=14).sum()
+        dn = (-diff.clip(upper=0.0)).rolling(14, min_periods=14).sum()
+        cmo = 100.0 * (up - dn) / (up + dn).replace(0, np.nan)
+        signals["CMO"] = _pack((cmo > 0.0) & (cmo >= cmo.shift(1)), cmo < 0.0)
+
+    if "FORCE_INDEX" in names:
+        efi = calc_ema((close_s - prev_close) * vol_s, 13)
+        signals["FORCE_INDEX"] = _pack(efi > 0.0, efi < 0.0)
+
+    if "CHOP" in names:
+        s_tr = tr_s.rolling(14, min_periods=14).sum()
+        hh = high_s.rolling(14, min_periods=14).max()
+        ll = low_s.rolling(14, min_periods=14).min()
+        rng = (hh - ll).replace(0, np.nan)
+        chop = 100.0 * np.log10((s_tr / rng).clip(lower=1e-9)) / np.log10(14.0)
+        sma20 = calc_sma(close_s, 20)
+        signals["CHOP"] = _pack(
+            (chop < 55.0) & (close_s > sma20),
+            (chop > 61.8) | (close_s < sma20),
+        )
+
+    if "VORTEX" in names:
+        vm_p = (high_s - low_s.shift(1)).abs()
+        vm_m = (low_s - high_s.shift(1)).abs()
+        s_tr14 = tr_s.rolling(14, min_periods=14).sum().replace(0, np.nan)
+        vi_p = vm_p.rolling(14, min_periods=14).sum() / s_tr14
+        vi_m = vm_m.rolling(14, min_periods=14).sum() / s_tr14
+        signals["VORTEX"] = _pack(vi_p > vi_m, vi_m > vi_p)
+
+    if "RVI" in names:
+        co = close_s - open_s
+        hl = high_s - low_s
+        num = (co + 2.0 * co.shift(1) + 2.0 * co.shift(2) + co.shift(3)) / 6.0
+        den = (hl + 2.0 * hl.shift(1) + 2.0 * hl.shift(2) + hl.shift(3)) / 6.0
+        rvi = calc_sma(num, 10) / calc_sma(den, 10).replace(0, np.nan)
+        rvi_sig = (rvi + 2.0 * rvi.shift(1) + 2.0 * rvi.shift(2) + rvi.shift(3)) / 6.0
+        signals["RVI"] = _pack(rvi > rvi_sig, rvi < rvi_sig)
+
+    if "ATR" in names:
+        atr = pd.Series(tr_s, index=df.index).ewm(alpha=1.0 / 14.0, adjust=False, min_periods=14).mean()
+        atr_ma = calc_sma(atr, 20)
+        sma10 = calc_sma(close_s, 10)
+        signals["ATR"] = _pack((atr > atr_ma) & (close_s > sma10), close_s < sma10)
+
+    if "CCI" in names:
+        tp = (high_s + low_s + close_s) / 3.0
+        tp_sma = calc_sma(tp, 20)
+        mad = tp.rolling(20, min_periods=20).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True).replace(0, np.nan)
+        cci = (tp - tp_sma) / (0.015 * mad)
+        signals["CCI"] = _pack(
+            ((cci > -100.0) & (cci.shift(1) <= -100.0)) | ((cci > 0.0) & (cci >= cci.shift(1))),
+            ((cci < 100.0) & (cci.shift(1) >= 100.0)) | (cci < 0.0),
+        )
+
+    if "WR" in names:
+        hh14 = high_s.rolling(14, min_periods=14).max()
+        ll14 = low_s.rolling(14, min_periods=14).min()
+        wr = -100.0 * (hh14 - close_s) / (hh14 - ll14).replace(0, np.nan)
+        signals["WR"] = _pack(
+            ((wr > -80.0) & (wr.shift(1) <= -80.0)) | ((wr > -50.0) & (wr >= wr.shift(1))),
+            ((wr < -20.0) & (wr.shift(1) >= -20.0)) | (wr < -55.0),
+        )
+
+    if "AO" in names:
+        hl2 = (high_s + low_s) / 2.0
+        ao = calc_sma(hl2, 5) - calc_sma(hl2, 34)
+        signals["AO"] = _pack((ao > 0.0) & (ao >= ao.shift(1)), ao < 0.0)
+
+    if "ROC" in names:
+        roc = (close_s - close_s.shift(12)) / close_s.shift(12).replace(0, np.nan) * 100.0
+        signals["ROC"] = _pack(roc > 0.0, roc < 0.0)
+
+    if "TRIX" in names:
+        e1 = calc_ema(close_s, 12)
+        e2 = calc_ema(e1, 12)
+        e3 = calc_ema(e2, 12)
+        trix = (e3 - e3.shift(1)) / e3.shift(1).replace(0, np.nan) * 100.0
+        trma = calc_sma(trix, 9)
+        signals["TRIX"] = _pack(trix > trma, trix < trma)
+
+    if "MFI" in names:
+        tp = (high_s + low_s + close_s) / 3.0
+        rmf = tp * vol_s
+        pos = np.where(tp > tp.shift(1), rmf, 0.0)
+        neg = np.where(tp < tp.shift(1), rmf, 0.0)
+        mr = pd.Series(pos, index=df.index).rolling(14, min_periods=14).sum() / pd.Series(neg, index=df.index).rolling(14, min_periods=14).sum().replace(0, np.nan)
+        mfi = 100.0 - 100.0 / (1.0 + mr)
+        signals["MFI"] = _pack(((mfi > 20.0) & (mfi.shift(1) <= 20.0)) | ((mfi > 50.0) & (mfi < 80.0)), (mfi < 80.0) & (mfi.shift(1) >= 80.0) | (mfi < 45.0))
+
+    if "OBV" in names:
+        obv_step = np.where(close_s > prev_close, vol_s, np.where(close_s < prev_close, -vol_s, 0.0))
+        obv = pd.Series(obv_step, index=df.index).cumsum()
+        obv_ma = calc_sma(obv, 20)
+        signals["OBV"] = _pack(obv > obv_ma, obv < obv_ma)
+
+    if "KDJ" in names:
+        ll9 = low_s.rolling(9, min_periods=9).min()
+        hh9 = high_s.rolling(9, min_periods=9).max()
+        rsv = np.where((hh9 - ll9) > 0, (close_s - ll9) / (hh9 - ll9) * 100.0, 50.0)
+        k = pd.Series(rsv, index=df.index).ewm(alpha=1.0 / 3.0, adjust=False).mean()
+        d = k.ewm(alpha=1.0 / 3.0, adjust=False).mean()
+        signals["KDJ"] = _pack((k > d) & (k < 80.0), (k < d) & (k > 30.0))
+
+    return signals

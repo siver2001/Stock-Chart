@@ -3,7 +3,7 @@ FastAPI Backend for VN Stock KLineChart Pro + Backtest Engine
 Run: uvicorn main:app --reload --port 8000
 """
 
-from typing import Optional
+from typing import Optional, List
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, APIRouter, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,6 +62,8 @@ class BacktestRequest(BaseModel):
     use_supertrend: bool = Field(default=False)
     use_squeeze: bool = Field(default=False)
     use_wavetrend: bool = Field(default=False)
+    extra_indicators: List[str] = Field(default_factory=list)
+    combine_mode: str = Field(default="AND")
     exit_mode: str = Field(default="macd_or_di")
 
     stop_loss_pct: float = Field(default=0.07, ge=0, le=0.5)
@@ -241,6 +243,8 @@ def post_backtest(req: BacktestRequest):
             use_supertrend=req.use_supertrend,
             use_squeeze=req.use_squeeze,
             use_wavetrend=req.use_wavetrend,
+            extra_indicators=req.extra_indicators,
+            combine_mode=req.combine_mode,
             exit_mode=req.exit_mode,
             stop_loss_pct=req.stop_loss_pct,
             take_profit_pct=req.take_profit_pct,

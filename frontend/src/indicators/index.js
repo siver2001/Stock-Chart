@@ -10,6 +10,7 @@ import { vwapIndicator } from './vwap'
 import { mfiIndicator } from './mfi'
 import { squeezeMomentumIndicator } from './squeezeMomentum'
 import { waveTrendIndicator } from './waveTrend'
+import { TRADINGVIEW_SUB_INDICATORS } from './tradingViewSubIndicators'
 import { registerCustomOverlays } from './customOverlays'
 
 let registered = false
@@ -29,6 +30,7 @@ export function registerAllCustomIndicators() {
   registerIndicator(mfiIndicator)
   registerIndicator(squeezeMomentumIndicator)
   registerIndicator(waveTrendIndicator)
+  TRADINGVIEW_SUB_INDICATORS.forEach((ind) => registerIndicator(ind))
   registerCustomOverlays()
   registered = true
 }

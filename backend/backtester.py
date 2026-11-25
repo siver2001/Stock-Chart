@@ -11,13 +11,13 @@ Designed for accuracy and realism:
 - Full performance metrics + Benchmark (Buy & Hold) comparison + Equity Curve + Trade Log
 """
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import List, Dict, Any, Optional
 import math
 import numpy as np
 import pandas as pd
 
-from indicators import attach_all_indicators
+from indicators import attach_all_indicators, compute_extra_indicator_signals
 
 
 @dataclass
@@ -52,7 +52,9 @@ class BacktestConfig:
     use_supertrend: bool = False
     use_squeeze: bool = False
     use_wavetrend: bool = False
-    exit_mode: str = "macd_or_di"           # "macd_cross", "macd_or_di", "any_bearish", "supertrend", "squeeze", "wavetrend"
+    extra_indicators: List[str] = field(default_factory=list)
+    combine_mode: str = "AND"               # "AND" | "OR"
+    exit_mode: str = "macd_or_di"           # "macd_cross", "macd_or_di", "any_bearish", "supertrend", "squeeze", "wavetrend", "selected_bearish"
 
     # Risk management (0 = disabled)
     stop_loss_pct: float = 0.07             # 7% cắt lỗ
@@ -100,6 +102,9 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
     wt1 = df["wt1"].to_numpy(dtype=float)
     wt2 = df["wt2"].to_numpy(dtype=float)
 
+    extra_list = [str(x).strip().upper() for x in (config.extra_indicators or []) if x]
+    extra_signals = compute_extra_indicator_signals(df, extra_list)
+
     cash = float(config.initial_capital)
     shares = 0
     entry_price = 0.0
@@ -114,7 +119,13 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
     trades: List[Dict[str, Any]] = []
     equity_curve: List[Dict[str, Any]] = []
 
-    warmup = max(config.macd_slow + config.macd_signal, config.adx_length * 2, config.sqz_length + 5, 35)
+    needs_long_warmup = any(x in extra_list for x in ("STC", "WILLIAMS_VIX_FIX", "TSI", "TRIX", "AO"))
+    warmup = max(
+        config.macd_slow + config.macd_signal,
+        config.adx_length * 2,
+        config.sqz_length + 5,
+        52 if needs_long_warmup else 35,
+    )
     min_hold_bars = 2 if config.enforce_t_plus_2 else 0
 
     def _execute_buy(bar_idx: int, raw_price: float):
@@ -223,19 +234,31 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         cond_sqz_bull = (sqz_mom[i] > 0) and (sqz_color[i] == 1)
         cond_wt_bull = (wt1[i] > wt2[i]) and (wt1[i] <= 0)
 
-        buy_signal = True
+        active_bulls: List[bool] = []
         if config.use_supertrend:
-            buy_signal = buy_signal and cond_st_bull
+            active_bulls.append(bool(cond_st_bull))
         if config.use_squeeze:
-            buy_signal = buy_signal and cond_sqz_bull
+            active_bulls.append(bool(cond_sqz_bull))
         if config.use_wavetrend:
-            buy_signal = buy_signal and cond_wt_bull
+            active_bulls.append(bool(cond_wt_bull))
         if config.use_macd:
-            buy_signal = buy_signal and cond_macd_bull
+            active_bulls.append(bool(cond_macd_bull))
         if config.use_adx:
-            buy_signal = buy_signal and cond_adx_bull
+            active_bulls.append(bool(cond_adx_bull))
         if config.use_weis_wave:
-            buy_signal = buy_signal and cond_ww_bull
+            active_bulls.append(bool(cond_ww_bull))
+
+        for name in extra_list:
+            sig_pair = extra_signals.get(name)
+            if sig_pair is not None:
+                active_bulls.append(bool(sig_pair[0][i]))
+
+        if not active_bulls:
+            buy_signal = False
+        elif str(config.combine_mode).upper() == "OR":
+            buy_signal = any(active_bulls)
+        else:
+            buy_signal = all(active_bulls)
 
         # Exit conditions
         macd_bear = cm_macd[i] < cm_signal[i]
@@ -245,9 +268,22 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
         sqz_bear = (sqz_mom[i] < 0) or (sqz_color[i] == 2 and sqz_mom[i] > 0)
         wt_bear = (wt1[i] < wt2[i]) and (wt1[i] >= 40)
 
+        extra_bear_hit = None
+        for name in extra_list:
+            sig_pair = extra_signals.get(name)
+            if sig_pair is not None and bool(sig_pair[1][i]):
+                extra_bear_hit = f"{name} Bearish"
+                break
+
+        has_core_trend = config.use_macd or config.use_adx or config.use_supertrend or config.use_squeeze or config.use_wavetrend
         sell_signal = False
         sell_reason = ""
-        if config.exit_mode == "supertrend":
+        if config.exit_mode == "selected_bearish" or (extra_list and not has_core_trend and config.exit_mode == "macd_or_di"):
+            if extra_bear_hit:
+                sell_signal, sell_reason = True, extra_bear_hit
+            elif config.use_weis_wave and ww_bear:
+                sell_signal, sell_reason = True, "Weis Wave Down"
+        elif config.exit_mode == "supertrend":
             if st_bear:
                 sell_signal, sell_reason = True, "SuperTrend Bearish (Đảo chiều)"
             elif config.use_macd and macd_bear:
@@ -272,11 +308,13 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
                 sell_signal, sell_reason = True, "Squeeze Momentum Bearish"
             elif wt_bear and config.use_wavetrend:
                 sell_signal, sell_reason = True, "WaveTrend Death Cross"
-            elif macd_bear:
+            elif extra_bear_hit:
+                sell_signal, sell_reason = True, extra_bear_hit
+            elif config.use_macd and macd_bear:
                 sell_signal, sell_reason = True, "MACD Bearish"
-            elif di_bear:
+            elif config.use_adx and di_bear:
                 sell_signal, sell_reason = True, "DI- > DI+"
-            elif ww_bear:
+            elif config.use_weis_wave and ww_bear:
                 sell_signal, sell_reason = True, "Weis Wave Down"
         else:  # macd_or_di (balanced default)
             if st_bear and config.use_supertrend:
@@ -285,6 +323,8 @@ def run_backtest(raw_df: pd.DataFrame, config: BacktestConfig) -> Dict[str, Any]
                 sell_signal, sell_reason = True, "Squeeze Momentum Bearish"
             elif wt_bear and config.use_wavetrend:
                 sell_signal, sell_reason = True, "WaveTrend Death Cross"
+            elif extra_bear_hit:
+                sell_signal, sell_reason = True, extra_bear_hit
             elif macd_bear:
                 sell_signal, sell_reason = True, "MACD Bearish Cross"
             elif di_bear:

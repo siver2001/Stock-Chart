@@ -2009,6 +2009,7 @@ export default function App() {
             activeSymbol={activeSymbol}
             isOpen={showBacktest}
             onClose={() => setShowBacktest(false)}
+            activeIndicators={activeIndicators}
           />
         </div>
 

@@ -52,10 +52,36 @@ function EquitySparkline({ curve }) {
   )
 }
 
+export const BACKTEST_EXTRA_INDICATORS = [
+  { id: 'STOCH_RSI', label: 'StochRSI' },
+  { id: 'WILLIAMS_VIX_FIX', label: 'CM VixFix (Bắt đáy)' },
+  { id: 'STC', label: 'Schaff Trend Cycle' },
+  { id: 'CMF', label: 'Chaikin Money Flow' },
+  { id: 'TSI', label: 'True Strength Index' },
+  { id: 'UO', label: 'Ultimate Osc' },
+  { id: 'ELDER_RAY', label: 'Elder-Ray' },
+  { id: 'CMO', label: 'Chande Mom (CMO)' },
+  { id: 'FORCE_INDEX', label: 'Force Index (EFI)' },
+  { id: 'CHOP', label: 'Choppiness (CHOP)' },
+  { id: 'VORTEX', label: 'Vortex (VI+/VI-)' },
+  { id: 'RVI', label: 'Relative Vigor (RVI)' },
+  { id: 'ATR', label: 'ATR Volatility' },
+  { id: 'CCI', label: 'CCI (20)' },
+  { id: 'WR', label: 'Williams %R' },
+  { id: 'AO', label: 'Awesome Osc (AO)' },
+  { id: 'ROC', label: 'Rate of Change' },
+  { id: 'TRIX', label: 'TRIX' },
+  { id: 'RSI', label: 'RSI (14)' },
+  { id: 'MFI', label: 'MFI (Dòng tiền)' },
+  { id: 'OBV', label: 'OBV' },
+  { id: 'KDJ', label: 'KDJ' },
+]
+
 export default function BottomBacktestDock({
   activeSymbol,
   isOpen,
   onClose,
+  activeIndicators = [],
 }) {
   const [windowMode, setWindowMode] = useState('normal') // 'normal', 'minimized', 'maximized'
   const [activeTab, setActiveTab] = useState('OVERVIEW') // 'OVERVIEW', 'TRADES', 'EQUITY', 'SETTINGS'
@@ -63,12 +89,14 @@ export default function BottomBacktestDock({
   const [form, setForm] = useState({
     symbol: activeSymbol || 'VNINDEX',
     start_date: '2023-01-01',
-    end_date: '2026-11-01',
+    end_date: new Date().toISOString().slice(0, 10),
     initial_capital: 100000000,
     adx_threshold: 20,
     stop_loss_pct: 7,
     take_profit_pct: 20,
     exit_mode: 'macd_or_di',
+    combine_mode: 'AND',
+    extra_indicators: [],
     enforce_t_plus_2: true,
     use_macd: true,
     use_adx: true,
@@ -100,78 +128,72 @@ export default function BottomBacktestDock({
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  const toggleExtraIndicator = (id) => {
+    setForm((prev) => {
+      const exists = (prev.extra_indicators || []).includes(id)
+      const next = exists
+        ? prev.extra_indicators.filter((x) => x !== id)
+        : [...(prev.extra_indicators || []), id]
+      return { ...prev, extra_indicators: next }
+    })
+  }
+
+  const syncFromActiveChart = () => {
+    const names = (activeIndicators || []).map((i) => i.name)
+    const extraSet = new Set(BACKTEST_EXTRA_INDICATORS.map((x) => x.id))
+    const nextExtra = names.filter((n) => extraSet.has(n))
+    const hasMacd = names.includes('CM_MACD_MTF') || names.includes('MACD')
+    const hasAdx = names.includes('ADX_DI') || names.includes('ADX_DI_BO')
+    const hasWw = names.includes('WEIS_WAVE') || names.includes('WEIS_WAVE_VOL')
+    const hasSt = names.includes('SUPERTREND')
+    const hasSqz = names.includes('SQUEEZE_MOMENTUM')
+    const hasWt = names.includes('WAVETREND')
+
+    setForm((prev) => ({
+      ...prev,
+      use_macd: hasMacd,
+      use_adx: hasAdx,
+      use_weis_wave: hasWw,
+      use_supertrend: hasSt,
+      use_squeeze: hasSqz,
+      use_wavetrend: hasWt,
+      extra_indicators: nextExtra,
+      exit_mode: nextExtra.length > 0 && !hasMacd && !hasAdx && !hasSt && !hasSqz && !hasWt ? 'selected_bearish' : prev.exit_mode,
+    }))
+  }
+
   const applyPreset = (presetType) => {
+    const baseOff = {
+      use_squeeze: false,
+      use_supertrend: false,
+      use_wavetrend: false,
+      use_macd: false,
+      use_adx: false,
+      use_weis_wave: false,
+      extra_indicators: [],
+    }
     if (presetType === 'squeeze_pure') {
-      setForm((prev) => ({
-        ...prev,
-        use_squeeze: true,
-        use_supertrend: false,
-        use_wavetrend: false,
-        use_macd: false,
-        use_adx: false,
-        use_weis_wave: false,
-        sqz_length: 20,
-        exit_mode: 'squeeze',
-      }))
+      setForm((prev) => ({ ...prev, ...baseOff, use_squeeze: true, sqz_length: 20, exit_mode: 'squeeze' }))
     } else if (presetType === 'wavetrend_pure') {
-      setForm((prev) => ({
-        ...prev,
-        use_wavetrend: true,
-        use_squeeze: false,
-        use_supertrend: false,
-        use_macd: false,
-        use_adx: false,
-        use_weis_wave: false,
-        exit_mode: 'wavetrend',
-      }))
+      setForm((prev) => ({ ...prev, ...baseOff, use_wavetrend: true, exit_mode: 'wavetrend' }))
     } else if (presetType === 'squeeze_supertrend') {
-      setForm((prev) => ({
-        ...prev,
-        use_squeeze: true,
-        use_supertrend: true,
-        use_wavetrend: false,
-        use_macd: false,
-        use_adx: false,
-        use_weis_wave: false,
-        exit_mode: 'supertrend',
-      }))
+      setForm((prev) => ({ ...prev, ...baseOff, use_squeeze: true, use_supertrend: true, exit_mode: 'supertrend' }))
     } else if (presetType === 'supertrend_pure') {
-      setForm((prev) => ({
-        ...prev,
-        use_supertrend: true,
-        use_squeeze: false,
-        use_wavetrend: false,
-        use_macd: false,
-        use_adx: false,
-        use_weis_wave: false,
-        st_period: 10,
-        st_mult: 3.0,
-        exit_mode: 'supertrend',
-      }))
-    } else if (presetType === 'supertrend_macd') {
-      setForm((prev) => ({
-        ...prev,
-        use_supertrend: true,
-        use_macd: true,
-        use_squeeze: false,
-        use_wavetrend: false,
-        use_adx: false,
-        use_weis_wave: false,
-        st_period: 10,
-        st_mult: 3.0,
-        exit_mode: 'supertrend',
-      }))
+      setForm((prev) => ({ ...prev, ...baseOff, use_supertrend: true, st_period: 10, st_mult: 3.0, exit_mode: 'supertrend' }))
     } else if (presetType === 'combo_classic') {
-      setForm((prev) => ({
-        ...prev,
-        use_supertrend: false,
-        use_squeeze: false,
-        use_wavetrend: false,
-        use_macd: true,
-        use_adx: true,
-        use_weis_wave: true,
-        exit_mode: 'macd_or_di',
-      }))
+      setForm((prev) => ({ ...prev, ...baseOff, use_macd: true, use_adx: true, use_weis_wave: true, exit_mode: 'macd_or_di' }))
+    } else if (presetType === 'stoch_rsi') {
+      setForm((prev) => ({ ...prev, ...baseOff, extra_indicators: ['STOCH_RSI'], exit_mode: 'selected_bearish' }))
+    } else if (presetType === 'vix_fix') {
+      setForm((prev) => ({ ...prev, ...baseOff, extra_indicators: ['WILLIAMS_VIX_FIX'], exit_mode: 'selected_bearish' }))
+    } else if (presetType === 'stc_cmf') {
+      setForm((prev) => ({ ...prev, ...baseOff, extra_indicators: ['STC', 'CMF'], exit_mode: 'selected_bearish' }))
+    } else if (presetType === 'vortex_chop') {
+      setForm((prev) => ({ ...prev, ...baseOff, extra_indicators: ['VORTEX', 'CHOP'], exit_mode: 'selected_bearish' }))
+    } else if (presetType === 'elder_ao') {
+      setForm((prev) => ({ ...prev, ...baseOff, extra_indicators: ['AO', 'ELDER_RAY'], exit_mode: 'selected_bearish' }))
+    } else if (presetType === 'cci_wr') {
+      setForm((prev) => ({ ...prev, ...baseOff, extra_indicators: ['CCI', 'WR'], exit_mode: 'selected_bearish' }))
     }
   }
 
@@ -494,6 +516,63 @@ export default function BottomBacktestDock({
               >
                 5. Combo MACD + ADX
               </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#2962ff' }}
+                onClick={() => applyPreset('stoch_rsi')}
+              >
+                6. StochRSI
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#00e676' }}
+                onClick={() => applyPreset('vix_fix')}
+              >
+                7. CM VixFix (Bắt đáy)
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#38bdf8' }}
+                onClick={() => applyPreset('stc_cmf')}
+              >
+                8. STC + CMF
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#a855f7' }}
+                onClick={() => applyPreset('vortex_chop')}
+              >
+                9. Vortex + CHOP
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#f59e0b' }}
+                onClick={() => applyPreset('elder_ao')}
+              >
+                10. AO + Elder-Ray
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #363a45', cursor: 'pointer', color: '#ec4899' }}
+                onClick={() => applyPreset('cci_wr')}
+              >
+                11. CCI + Williams %R
+              </button>
+              <button
+                type="button"
+                className="tv-btn-ghost"
+                style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '4px', border: '1px solid #2962ff', background: 'rgba(41,98,255,0.12)', cursor: 'pointer', color: '#60a5fa', fontWeight: 600 }}
+                onClick={syncFromActiveChart}
+                title="Tự động lấy toàn bộ chỉ báo đang bật trên biểu đồ đưa vào Backtest"
+              >
+                ✨ Nạp từ biểu đồ ({activeIndicators.length})
+              </button>
             </div>
 
             <div className="tv-form-grid-3col">
@@ -546,11 +625,20 @@ export default function BottomBacktestDock({
                 <label>Chế độ thoát lệnh</label>
                 <select value={form.exit_mode} onChange={(e) => handleChange('exit_mode', e.target.value)}>
                   <option value="macd_or_di">Cân bằng: MACD cắt xuống hoặc DI- &gt; DI+</option>
+                  <option value="selected_bearish">Theo chỉ báo phụ đang chọn đảo chiều</option>
                   <option value="squeeze">Squeeze Momentum: Bán khi động lượng suy yếu</option>
                   <option value="wavetrend">WaveTrend: Bán khi Death Cross vùng quá mua</option>
                   <option value="supertrend">SuperTrend: Bán khi dải chuyển sang Đỏ</option>
                   <option value="macd_cross">Bảo thủ: Chỉ khi MACD cắt xuống Signal</option>
                   <option value="any_bearish">Nhạy bén: Bất kỳ chỉ báo nào đảo chiều</option>
+                </select>
+              </div>
+
+              <div className="tv-field">
+                <label>Quy tắc gộp nhiều chỉ báo</label>
+                <select value={form.combine_mode} onChange={(e) => handleChange('combine_mode', e.target.value)}>
+                  <option value="AND">AND (Phải khớp TẤT CẢ chỉ báo đã bật)</option>
+                  <option value="OR">OR (Chỉ cần 1 chỉ báo cho điểm Mua)</option>
                 </select>
               </div>
 
@@ -653,6 +741,48 @@ export default function BottomBacktestDock({
                   />
                   <span>Dùng Weis Wave Volume</span>
                 </label>
+              </div>
+            </div>
+
+            {/* Extra 22 TradingView Sub-pane Indicators Selector */}
+            <div style={{ marginTop: '14px', padding: '10px 12px', background: '#181b24', borderRadius: '6px', border: '1px solid #2a2e39' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#d1d4dc' }}>
+                  Chọn thêm Chỉ báo phụ TradingView vào Backtest ({(form.extra_indicators || []).length} đang chọn):
+                </span>
+                {(form.extra_indicators || []).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleChange('extra_indicators', [])}
+                    style={{ background: 'transparent', border: 'none', color: '#f23645', fontSize: '11px', cursor: 'pointer' }}
+                  >
+                    Bỏ chọn hết
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {BACKTEST_EXTRA_INDICATORS.map((ind) => {
+                  const selected = (form.extra_indicators || []).includes(ind.id)
+                  return (
+                    <button
+                      key={ind.id}
+                      type="button"
+                      onClick={() => toggleExtraIndicator(ind.id)}
+                      style={{
+                        padding: '4px 9px',
+                        fontSize: '11px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        border: selected ? '1px solid #2962ff' : '1px solid #2a2e39',
+                        background: selected ? 'rgba(41, 98, 255, 0.22)' : '#131722',
+                        color: selected ? '#60a5fa' : '#9ca3af',
+                        fontWeight: selected ? 600 : 400,
+                      }}
+                    >
+                      {selected ? '✓ ' : '+ '}{ind.label}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </div>
