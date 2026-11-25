@@ -437,13 +437,22 @@ def _resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame:
 _QUOTES_CACHE: Dict[str, Tuple[float, dict]] = {}
 CACHE_TTL_QUOTES = 2.0  # 2.0 seconds cache for synchronized real-time quotes
 
+# Mapping VPS market index codes to standard symbols
+_VPS_INDEX_CODE_TO_SYM = {
+    "10": "VNINDEX",
+    "11": "VN30",
+    "02": "HNXINDEX",
+    "03": "UPCOMINDEX",
+}
+_INDEX_SYMBOLS = {"VNINDEX", "VN30", "HNXINDEX", "HNX30", "UPCOMINDEX"}
+
 
 def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
     """
-    Ultra-fast parallel quote fetcher for Watchlist.
+    Ultra-fast parallel quote fetcher for Watchlist (supports 100-500+ symbols in < 0.5s).
     Returns {symbol: {symbol, close, open, high, low, volume, timestamp, ref_price, change, pct_change}}
-    Queries VNDIRECT DChart for recent bars (7 days), taking < 0.8s for 15+ symbols in parallel.
-    Uses 2.0s in-memory cache per symbol to prevent rate limits and ensure lightning-fast UI responsiveness.
+    Primary bulk source: VPS live price board API (1 request per 80 stocks + 1 request for indices).
+    Fallback for missing/unlisted tickers: parallel VNDIRECT DChart -> benchmark fallback.
     """
     if not symbols:
         return {}
@@ -451,11 +460,13 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
     now = time.time()
     results: Dict[str, dict] = {}
     missing_syms: List[str] = []
+    seen = set()
 
     for s in symbols:
         sym = s.strip().upper()
-        if not sym:
+        if not sym or sym in seen:
             continue
+        seen.add(sym)
         cached = _QUOTES_CACHE.get(sym)
         if cached and cached[0] > now:
             results[sym] = cached[1].copy()
@@ -470,6 +481,117 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://banggia.vps.com.vn/",
+        "Accept": "application/json, text/plain, */*",
+    }
+
+    def _safe_float(val: Any, default: float = 0.0) -> float:
+        try:
+            if val is None or val == "":
+                return default
+            return float(val)
+        except Exception:
+            return default
+
+    def _fetch_vps_stock_chunk(chunk: List[str]) -> Dict[str, dict]:
+        chunk_res: Dict[str, dict] = {}
+        if not chunk:
+            return chunk_res
+        url = f"https://bgapidatafeed.vps.com.vn/getliststockdata/{','.join(chunk)}"
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                items = json.loads(resp.read().decode("utf-8"))
+            if not isinstance(items, list):
+                return chunk_res
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                sym = (item.get("sym") or "").strip().upper()
+                if not sym:
+                    continue
+                r_raw = _safe_float(item.get("r"), 0.0)
+                close_vnd = _safe_float(item.get("closePrice"), 0.0)
+                # VPS reports r/lastPrice/openPrice/highPrice/lowPrice in thousands of VND
+                ref_price = round(r_raw * 1000.0, 0) if r_raw > 0 else round(close_vnd, 0)
+                last_raw = _safe_float(item.get("lastPrice"), 0.0)
+                last_c = round(last_raw * 1000.0, 0) if last_raw > 0 else ref_price
+                if last_c <= 0:
+                    continue
+                if ref_price <= 0:
+                    ref_price = last_c
+
+                open_raw = _safe_float(item.get("openPrice"), 0.0)
+                high_raw = _safe_float(item.get("highPrice"), 0.0)
+                low_raw = _safe_float(item.get("lowPrice"), 0.0)
+                last_o = round(open_raw * 1000.0, 0) if open_raw > 0 else last_c
+                last_h = round(high_raw * 1000.0, 0) if high_raw > 0 else last_c
+                last_l = round(low_raw * 1000.0, 0) if low_raw > 0 else last_c
+                last_v = round(_safe_float(item.get("lot"), 0.0) * 10.0, 0)
+
+                diff = round(last_c - ref_price, 0)
+                pct = round((diff / ref_price * 100.0), 2) if ref_price != 0 else 0.0
+
+                chunk_res[sym] = {
+                    "symbol": sym,
+                    "close": last_c,
+                    "open": last_o,
+                    "high": last_h,
+                    "low": last_l,
+                    "volume": last_v,
+                    "timestamp": int(now_ts * 1000),
+                    "ref_price": ref_price,
+                    "change": diff,
+                    "pct_change": pct,
+                }
+        except Exception as e:
+            logger.debug(f"VPS bulk stock chunk fetch failed: {e}")
+        return chunk_res
+
+    def _fetch_vps_indices() -> Dict[str, dict]:
+        idx_res: Dict[str, dict] = {}
+        codes = ",".join(_VPS_INDEX_CODE_TO_SYM.keys())
+        url = f"https://bgapidatafeed.vps.com.vn/getlistindexdetail/{codes}"
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                items = json.loads(resp.read().decode("utf-8"))
+            if not isinstance(items, list):
+                return idx_res
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                mc = str(item.get("mc") or item.get("hashValue") or "").strip()
+                sym = _VPS_INDEX_CODE_TO_SYM.get(mc)
+                if not sym:
+                    continue
+                last_c = round(_safe_float(item.get("cIndex"), 0.0), 2)
+                ref_price = round(_safe_float(item.get("oIndex"), 0.0), 2)
+                if last_c <= 0:
+                    continue
+                if ref_price <= 0:
+                    ref_price = last_c
+                last_v = round(_safe_float(item.get("vol"), 0.0), 0)
+                diff = round(last_c - ref_price, 2)
+                pct = round((diff / ref_price * 100.0), 2) if ref_price != 0 else 0.0
+                idx_res[sym] = {
+                    "symbol": sym,
+                    "close": last_c,
+                    "open": ref_price,
+                    "high": max(last_c, ref_price),
+                    "low": min(last_c, ref_price),
+                    "volume": last_v,
+                    "timestamp": int(now_ts * 1000),
+                    "ref_price": ref_price,
+                    "change": diff,
+                    "pct_change": pct,
+                }
+        except Exception as e:
+            logger.debug(f"VPS index detail fetch failed: {e}")
+        return idx_res
+
+    dchart_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Referer": "https://dchart.vndirect.com.vn/",
         "Accept": "application/json, text/plain, */*",
     }
@@ -477,8 +599,8 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
     def _fetch_one_quote(sym: str) -> Tuple[str, Optional[dict]]:
         url = f"https://dchart-api.vndirect.com.vn/dchart/history?resolution=D&symbol={sym}&from={from_ts}&to={now_ts}"
         try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=4) as resp:
+            req = urllib.request.Request(url, headers=dchart_headers)
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
 
             if data and data.get("s") == "ok" and data.get("t"):
@@ -497,13 +619,8 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
                     last_v = v[-1]
                     last_ts = int(t[-1] * 1000)
 
-                    # Giá tham chiếu là giá đóng cửa phiên hôm trước (hoặc giá mở cửa nếu chỉ có 1 thanh)
                     ref_price = c[-2] if len(c) >= 2 else last_o
-
-                    # Standardize VN stock prices:
-                    # Stocks: Full exact VND (e.g. 19,550 VND for SSI, 44,650 VND for FPT)
-                    # Indices: Exact index points (e.g. 1,688.79 for VNINDEX, 1,776.31 for VN30)
-                    is_index = sym in ("VNINDEX", "VN30", "HNXINDEX", "UPCOMINDEX", "HNX30")
+                    is_index = sym in _INDEX_SYMBOLS
                     if not is_index:
                         if last_c < 500:
                             last_c = round(last_c * 1000.0, 0)
@@ -544,11 +661,9 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
         except Exception as e:
             logger.debug(f"Direct quote fetch failed for {sym}: {e}")
 
-        # If fast fetch failed, check if we have older cached quote or fallback
         if sym in _QUOTES_CACHE:
             return sym, _QUOTES_CACHE[sym][1].copy()
 
-        # Fallback to realistic benchmark price (guarantees accurate price and 0 jitter)
         try:
             bench_price = REAL_BENCHMARK_PRICES.get(sym)
             if bench_price is not None:
@@ -591,12 +706,36 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
 
         return sym, None
 
-    max_workers = min(len(missing_syms), 10)
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for sym, q_data in executor.map(_fetch_one_quote, missing_syms):
-            if q_data:
-                _QUOTES_CACHE[sym] = (now + CACHE_TTL_QUOTES, q_data)
-                results[sym] = q_data
+    # 1. Parallel Bulk Fetch via VPS (80 stocks/call + 1 index call)
+    missing_indices = [s for s in missing_syms if s in _INDEX_SYMBOLS]
+    missing_stocks = [s for s in missing_syms if s not in _INDEX_SYMBOLS]
+    stock_chunks = [missing_stocks[i : i + 80] for i in range(0, len(missing_stocks), 80)]
+
+    bulk_tasks = len(stock_chunks) + (1 if any(s in _VPS_INDEX_CODE_TO_SYM.values() for s in missing_indices) else 0)
+    if bulk_tasks > 0:
+        with ThreadPoolExecutor(max_workers=min(bulk_tasks, 8)) as executor:
+            futures = [executor.submit(_fetch_vps_stock_chunk, ch) for ch in stock_chunks]
+            if any(s in _VPS_INDEX_CODE_TO_SYM.values() for s in missing_indices):
+                futures.append(executor.submit(_fetch_vps_indices))
+            for fut in futures:
+                try:
+                    fetched_map = fut.result()
+                    for sym, q_data in fetched_map.items():
+                        if sym in seen and q_data:
+                            _QUOTES_CACHE[sym] = (now + CACHE_TTL_QUOTES, q_data)
+                            results[sym] = q_data
+                except Exception as e:
+                    logger.debug(f"Bulk future error: {e}")
+
+    # 2. Fallback only for remaining symbols missing from VPS bulk API
+    remaining_syms = [s for s in missing_syms if s not in results]
+    if remaining_syms:
+        max_workers = min(len(remaining_syms), 15)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for sym, q_data in executor.map(_fetch_one_quote, remaining_syms):
+                if q_data:
+                    _QUOTES_CACHE[sym] = (now + CACHE_TTL_QUOTES, q_data)
+                    results[sym] = q_data
 
     return results
 

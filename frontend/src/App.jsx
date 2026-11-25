@@ -1248,18 +1248,19 @@ export default function App() {
     if (!datafeedRef.current) return
     let symbolsToPreload = ['VNINDEX', 'VN30', 'FPT', 'HPG', 'VCB', 'SSI', 'MWG', 'TCB']
     try {
-      const saved = localStorage.getItem('vn_watchlist_symbols')
+      const saved = localStorage.getItem('vn_stock_watchlist') || localStorage.getItem('vn_watchlist_symbols')
       if (saved) {
         const parsed = JSON.parse(saved)
         if (Array.isArray(parsed) && parsed.length > 0) {
-          symbolsToPreload = parsed
+          // Only pre-cache top 8 symbols so we don't congest network when watchlist has 100+ items
+          symbolsToPreload = parsed.slice(0, 8)
         }
       }
     } catch {}
 
     const timer = setTimeout(() => {
       datafeedRef.current?.prefetchSymbols?.(symbolsToPreload, activePeriodRef.current)
-    }, 600)
+    }, 1800)
 
     return () => clearTimeout(timer)
   }, [activePeriod])

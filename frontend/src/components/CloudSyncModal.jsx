@@ -97,7 +97,7 @@ export default function CloudSyncModal({
       try {
         const rawW = localStorage.getItem('vn_stock_watchlist')
         if (rawW) localWatchlist = JSON.parse(rawW)
-        const rawF = localStorage.getItem('vn_stock_flags')
+        const rawF = localStorage.getItem('vn_watchlist_flags') || localStorage.getItem('vn_stock_flags')
         if (rawF) localFlags = JSON.parse(rawF)
       } catch {}
 

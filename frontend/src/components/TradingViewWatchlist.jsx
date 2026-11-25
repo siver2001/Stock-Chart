@@ -65,6 +65,7 @@ const COLUMNS_STORAGE_KEY = 'vn_watchlist_columns'
 const EXPANDED_STORAGE_KEY = 'vn_watchlist_expanded'
 const ACTIVE_LIST_KEY = 'vn_watchlist_active_preset'
 const WIDTH_STORAGE_KEY = 'vn_watchlist_custom_width'
+const QUOTES_STORAGE_KEY = 'vn_watchlist_quotes_cache'
 
 export const FLAG_COLORS = [
   { id: 'red', name: 'Đỏ (Cắt lỗ / Chú ý)', hex: '#f23645' },
@@ -277,7 +278,16 @@ export default function TradingViewWatchlist({
   const [showAddInput, setShowAddInput] = useState(false)
   const [showPresetDropdown, setShowPresetDropdown] = useState(false)
   const [showOptionsMenu, setShowOptionsMenu] = useState(false)
-  const [quotes, setQuotes] = useState({})
+  const [quotes, setQuotes] = useState(() => {
+    try {
+      const saved = localStorage.getItem(QUOTES_STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed && typeof parsed === 'object') return parsed
+      }
+    } catch {}
+    return {}
+  })
   const [flashes, setFlashes] = useState({})
 
   // Sorting: { column: 'symbol' | 'lastPrice' | 'change' | 'pctChange' | 'volume', direction: 'asc' | 'desc' | 'default' }
@@ -423,56 +433,110 @@ export default function TradingViewWatchlist({
     }
   }, [showAddInput])
 
-  // Batch fetch quotes for watchlist symbols
+  // Persist cached quotes to localStorage (debounced so UI stays 60fps & next reload is 0ms instant)
+  const quotesCacheTimerRef = useRef(null)
+  useEffect(() => {
+    if (!quotes || Object.keys(quotes).length === 0) return
+    if (quotesCacheTimerRef.current) clearTimeout(quotesCacheTimerRef.current)
+    quotesCacheTimerRef.current = setTimeout(() => {
+      try {
+        const compact = {}
+        const allowed = new Set((symbols || []).map((s) => s.toUpperCase()))
+        for (const [sym, q] of Object.entries(quotes)) {
+          if (allowed.size > 0 && !allowed.has(sym.toUpperCase())) continue
+          if (q && q.close != null) {
+            compact[sym] = {
+              symbol: q.symbol || sym,
+              close: q.close,
+              ref_price: q.ref_price,
+              change: q.change,
+              pct_change: q.pct_change,
+              volume: q.volume,
+              timestamp: q.timestamp,
+            }
+          }
+        }
+        localStorage.setItem(QUOTES_STORAGE_KEY, JSON.stringify(compact))
+      } catch {}
+    }, 450)
+    return () => {
+      if (quotesCacheTimerRef.current) clearTimeout(quotesCacheTimerRef.current)
+    }
+  }, [quotes, symbols])
+
+  // Batch fetch quotes for watchlist symbols (progressive chunking + parallel requests)
+  const quoteFetchSeqRef = useRef(0)
   useEffect(() => {
     let isMounted = true
-    const loadQuotes = async () => {
-      if (!symbols || symbols.length === 0) return
-      try {
-        const data = await fetchQuotes(symbols)
-        if (isMounted && data) {
-          const marketOpen = isVietnamMarketOpen()
-          setQuotes((prev) => {
-            const nextFlashes = {}
-            let hasFlash = false
-            // Only trigger flash animations if the market is actually OPEN
-            if (marketOpen) {
-              for (const [sym, q] of Object.entries(data)) {
-                const oldQ = prev[sym]
-                if (oldQ && oldQ.close != null && q.close != null && oldQ.close !== q.close) {
-                  if (q.close > oldQ.close) {
-                    nextFlashes[sym] = 'up'
-                    hasFlash = true
-                  } else if (q.close < oldQ.close) {
-                    nextFlashes[sym] = 'down'
-                    hasFlash = true
-                  }
-                }
+
+    const applyQuoteChunk = (data) => {
+      if (!isMounted || !data || Object.keys(data).length === 0) return
+      const marketOpen = isVietnamMarketOpen()
+      setQuotes((prev) => {
+        const nextFlashes = {}
+        let hasFlash = false
+        // Only trigger flash animations if the market is actually OPEN
+        if (marketOpen) {
+          for (const [sym, q] of Object.entries(data)) {
+            const oldQ = prev[sym]
+            if (oldQ && oldQ.close != null && q.close != null && oldQ.close !== q.close) {
+              if (q.close > oldQ.close) {
+                nextFlashes[sym] = 'up'
+                hasFlash = true
+              } else if (q.close < oldQ.close) {
+                nextFlashes[sym] = 'down'
+                hasFlash = true
               }
             }
-            if (hasFlash) {
-              setFlashes((f) => ({ ...f, ...nextFlashes }))
-              setTimeout(() => {
-                if (isMounted) {
-                  setFlashes((f) => {
-                    const cleaned = { ...f }
-                    Object.keys(nextFlashes).forEach((k) => delete cleaned[k])
-                    return cleaned
-                  })
-                }
-              }, 800)
-            }
-            return { ...prev, ...data }
-          })
+          }
         }
+        if (hasFlash) {
+          setFlashes((f) => ({ ...f, ...nextFlashes }))
+          setTimeout(() => {
+            if (isMounted) {
+              setFlashes((f) => {
+                const cleaned = { ...f }
+                Object.keys(nextFlashes).forEach((k) => delete cleaned[k])
+                return cleaned
+              })
+            }
+          }, 800)
+        }
+        return { ...prev, ...data }
+      })
+    }
+
+    const loadQuotes = async () => {
+      if (!symbols || symbols.length === 0) return
+      const seq = ++quoteFetchSeqRef.current
+      const CHUNK_SIZE = 50
+      const chunks = []
+      for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
+        chunks.push(symbols.slice(i, i + CHUNK_SIZE))
+      }
+
+      try {
+        // Fetch all chunks in parallel, merging each chunk into UI immediately as it returns
+        await Promise.all(
+          chunks.map(async (chunk) => {
+            try {
+              const data = await fetchQuotes(chunk)
+              if (isMounted && seq === quoteFetchSeqRef.current && data) {
+                applyQuoteChunk(data)
+              }
+            } catch (err) {
+              console.warn('Chunk quote fetch failed:', err)
+            }
+          })
+        )
       } catch (err) {
         console.warn('Could not fetch quotes batch:', err)
       }
     }
 
     loadQuotes()
-    // Poll every 2.5s during market hours, or 15s when market is closed to prevent unnecessary churn
-    const pollInterval = isVietnamMarketOpen() ? 2500 : 15000
+    // Poll every 3s during market hours, or 20s when market is closed to prevent unnecessary churn
+    const pollInterval = isVietnamMarketOpen() ? 3000 : 20000
     const interval = setInterval(loadQuotes, pollInterval)
     return () => {
       isMounted = false
