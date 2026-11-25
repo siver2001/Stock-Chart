@@ -11,6 +11,44 @@ function mapPeriodToInterval(period) {
   return '1D'
 }
 
+const SESSION_KEY_LIST = 'vn_kline_sess_keys'
+const SESSION_KEY_PREFIX = 'vn_kline_sess_'
+const MAX_SESSION_CHARTS = 5
+
+function readSessionKlineCache(key, ttlMs) {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY_PREFIX + key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed && Array.isArray(parsed.bars) && parsed.bars.length > 0 && Date.now() - parsed.timestamp < ttlMs) {
+      return parsed
+    }
+  } catch {}
+  return null
+}
+
+function writeSessionKlineCache(key, bars, origin) {
+  try {
+    if (!Array.isArray(bars) || bars.length === 0) return
+    let keys = []
+    try {
+      const rawKeys = sessionStorage.getItem(SESSION_KEY_LIST)
+      if (rawKeys) keys = JSON.parse(rawKeys) || []
+    } catch {}
+    keys = keys.filter((k) => k !== key)
+    keys.push(key)
+    while (keys.length > MAX_SESSION_CHARTS) {
+      const oldest = keys.shift()
+      sessionStorage.removeItem(SESSION_KEY_PREFIX + oldest)
+    }
+    sessionStorage.setItem(SESSION_KEY_LIST, JSON.stringify(keys))
+    sessionStorage.setItem(
+      SESSION_KEY_PREFIX + key,
+      JSON.stringify({ timestamp: Date.now(), bars, origin })
+    )
+  } catch {}
+}
+
 export class VNStockDatafeed {
   constructor(onDataOriginChange) {
     this.onDataOriginChange = onDataOriginChange
@@ -29,12 +67,16 @@ export class VNStockDatafeed {
 
   getCachedData(symbol, period) {
     const key = this.getCacheKey(symbol, period)
-    const item = this._cache.get(key)
-    if (!item) return null
     const isDaily = key.endsWith('1D') || key.endsWith('1W') || key.endsWith('1M')
     const ttl = isDaily ? 180000 : 30000 // 3 min for daily, 30s for intraday
-    if (Date.now() - item.timestamp < ttl) {
+    const item = this._cache.get(key)
+    if (item && Date.now() - item.timestamp < ttl) {
       return item.bars
+    }
+    const sessItem = readSessionKlineCache(key, ttl)
+    if (sessItem) {
+      this._cache.set(key, sessItem)
+      return sessItem.bars
     }
     return null
   }
@@ -138,6 +180,7 @@ export class VNStockDatafeed {
             bars,
             origin,
           })
+          writeSessionKlineCache(key, bars, origin)
         }
 
         return bars || []

@@ -19,8 +19,87 @@ export async function searchSymbols(query = '') {
   return data.symbols || []
 }
 
+const NATIVE_DCHART_MAP = {
+  '1D': { res: 'D', lookbackDays: 730 },
+  D: { res: 'D', lookbackDays: 730 },
+  '1H': { res: '60', lookbackDays: 90 },
+  '1h': { res: '60', lookbackDays: 90 },
+  '15m': { res: '15', lookbackDays: 30 },
+  '1m': { res: '1', lookbackDays: 30 },
+}
+
+function normalizeEpochSec(val) {
+  const num = Number(val)
+  if (!Number.isFinite(num) || num <= 0) return null
+  return num > 10_000_000_000 ? Math.floor(num / 1000) : Math.floor(num)
+}
+
+function parseDChartBars(data, ticker) {
+  if (!data || data.s !== 'ok' || !Array.isArray(data.t) || data.t.length === 0) return []
+  const rawBars = []
+  for (let i = 0; i < data.t.length; i++) {
+    const t = Number(data.t[i])
+    const o = Number(data.o?.[i])
+    const h = Number(data.h?.[i])
+    const l = Number(data.l?.[i])
+    const c = Number(data.c?.[i])
+    const v = Number(data.v?.[i]) || 0
+    if (!Number.isFinite(t) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(c)) {
+      continue
+    }
+    rawBars.push({ timestamp: t * 1000, open: o, high: h, low: l, close: c, volume: v })
+  }
+  if (rawBars.length === 0) return []
+
+  const isIndex = INDEX_SYMBOLS.has(ticker)
+  const sortedCloses = rawBars.map((b) => b.close).sort((a, b) => a - b)
+  const medianClose = sortedCloses[Math.floor(sortedCloses.length / 2)]
+  const mul = !isIndex && medianClose < 500 ? 1000 : 1
+  const dec = isIndex ? 2 : 0
+  const fmt = (n) => Number((n * mul).toFixed(dec))
+
+  rawBars.sort((a, b) => a.timestamp - b.timestamp)
+  const deduped = []
+  let lastTs = -1
+  for (const b of rawBars) {
+    if (b.timestamp === lastTs) continue
+    lastTs = b.timestamp
+    deduped.push({
+      timestamp: b.timestamp,
+      open: fmt(b.open),
+      high: fmt(b.high),
+      low: fmt(b.low),
+      close: fmt(b.close),
+      volume: b.volume,
+    })
+  }
+  return deduped
+}
+
 export async function fetchHistory({ symbol, interval = '1D', from, to }) {
-  const params = { symbol, interval }
+  const ticker = String(symbol || 'VNINDEX').trim().toUpperCase()
+  const intKey = String(interval || '1D').trim()
+  const nativeSpec = NATIVE_DCHART_MAP[intKey]
+
+  // Try ultra-fast direct browser VNDIRECT DChart for native intervals (~130ms vs ~1.8s via Vercel)
+  if (nativeSpec) {
+    try {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const toSec = normalizeEpochSec(to) || nowSec
+      const fromSec = normalizeEpochSec(from) || (toSec - nativeSpec.lookbackDays * 86400)
+      const url = `https://dchart-api.vndirect.com.vn/dchart/history?resolution=${nativeSpec.res}&symbol=${encodeURIComponent(ticker)}&from=${fromSec}&to=${toSec}`
+      const resp = await fetch(url, { signal: createTimeoutSignal(4000) })
+      if (resp.ok) {
+        const json = await resp.json()
+        const bars = parseDChartBars(json, ticker)
+        if (bars.length > 0) return bars
+      }
+    } catch {
+      // Fall back transparently to FastAPI /api/history
+    }
+  }
+
+  const params = { symbol: ticker, interval: intKey }
   if (from) params.from = from
   if (to) params.to = to
   const { data } = await api.get('/history', { params })
@@ -28,7 +107,53 @@ export async function fetchHistory({ symbol, interval = '1D', from, to }) {
 }
 
 export async function fetchLatest({ symbol, interval = '1D' }) {
-  const { data } = await api.get('/latest', { params: { symbol, interval } })
+  const ticker = String(symbol || 'VNINDEX').trim().toUpperCase()
+  const intKey = String(interval || '1D').trim()
+
+  // Fast client-direct path for 1D (reuses ultra-fast VPS/DChart quote fetcher)
+  if (['1D', 'D'].includes(intKey.toUpperCase())) {
+    try {
+      const qMap = await fetchQuotes([ticker])
+      const q = qMap?.[ticker]
+      if (q && q.close != null) {
+        return {
+          symbol: ticker,
+          timestamp: q.timestamp,
+          open: q.open,
+          high: q.high,
+          low: q.low,
+          close: q.close,
+          volume: q.volume,
+          ref_price: q.ref_price,
+          change: q.change,
+          pct_change: q.pct_change,
+        }
+      }
+    } catch {}
+  } else if (NATIVE_DCHART_MAP[intKey]) {
+    // Fast client-direct path for 1H / 15m / 1m intraday latest bar
+    try {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const fromSec = nowSec - 2 * 86400
+      const res = NATIVE_DCHART_MAP[intKey].res
+      const url = `https://dchart-api.vndirect.com.vn/dchart/history?resolution=${res}&symbol=${encodeURIComponent(ticker)}&from=${fromSec}&to=${nowSec}`
+      const resp = await fetch(url, { signal: createTimeoutSignal(3000) })
+      if (resp.ok) {
+        const json = await resp.json()
+        const bars = parseDChartBars(json, ticker)
+        if (bars.length > 0) {
+          const lastBar = bars[bars.length - 1]
+          const refPrice = bars.length >= 2 ? bars[bars.length - 2].close : lastBar.open
+          const dec = INDEX_SYMBOLS.has(ticker) ? 2 : 0
+          const diff = Number((lastBar.close - refPrice).toFixed(dec))
+          const pct = refPrice !== 0 ? Number(((diff / refPrice) * 100).toFixed(2)) : 0
+          return { ...lastBar, ref_price: refPrice, change: diff, pct_change: pct }
+        }
+      }
+    } catch {}
+  }
+
+  const { data } = await api.get('/latest', { params: { symbol: ticker, interval: intKey } })
   return data
 }
 
