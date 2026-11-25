@@ -464,8 +464,9 @@ export default function TradingViewWatchlist({
     }
   }, [quotes, symbols])
 
-  // Batch fetch quotes for watchlist symbols (progressive chunking + parallel requests)
+  // Batch fetch quotes for watchlist symbols (progressive chunking + overlap guard)
   const quoteFetchSeqRef = useRef(0)
+  const isFetchingQuotesRef = useRef(false)
   useEffect(() => {
     let isMounted = true
 
@@ -506,17 +507,19 @@ export default function TradingViewWatchlist({
       })
     }
 
-    const loadQuotes = async () => {
+    const loadQuotes = async (force = false) => {
       if (!symbols || symbols.length === 0) return
+      if (!force && isFetchingQuotesRef.current) return
+      isFetchingQuotesRef.current = true
       const seq = ++quoteFetchSeqRef.current
-      const CHUNK_SIZE = 50
+      // Split into first 60 (visible viewport priority) and remaining chunks
+      const CHUNK_SIZE = 70
       const chunks = []
       for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
         chunks.push(symbols.slice(i, i + CHUNK_SIZE))
       }
 
       try {
-        // Fetch all chunks in parallel, merging each chunk into UI immediately as it returns
         await Promise.all(
           chunks.map(async (chunk) => {
             try {
@@ -531,15 +534,20 @@ export default function TradingViewWatchlist({
         )
       } catch (err) {
         console.warn('Could not fetch quotes batch:', err)
+      } finally {
+        if (seq === quoteFetchSeqRef.current) {
+          isFetchingQuotesRef.current = false
+        }
       }
     }
 
-    loadQuotes()
+    loadQuotes(true)
     // Poll every 3s during market hours, or 20s when market is closed to prevent unnecessary churn
     const pollInterval = isVietnamMarketOpen() ? 3000 : 20000
-    const interval = setInterval(loadQuotes, pollInterval)
+    const interval = setInterval(() => loadQuotes(false), pollInterval)
     return () => {
       isMounted = false
+      isFetchingQuotesRef.current = false
       clearInterval(interval)
     }
   }, [symbols])

@@ -7,6 +7,7 @@ Vietnam Stock Data Provider:
 - Reliable fallback to vnstock / TCBS and realistic current-date algorithmic generator if offline
 """
 
+import os
 import time
 import json
 import logging
@@ -706,31 +707,33 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
 
         return sym, None
 
-    # 1. Parallel Bulk Fetch via VPS (80 stocks/call + 1 index call)
-    missing_indices = [s for s in missing_syms if s in _INDEX_SYMBOLS]
-    missing_stocks = [s for s in missing_syms if s not in _INDEX_SYMBOLS]
-    stock_chunks = [missing_stocks[i : i + 80] for i in range(0, len(missing_stocks), 80)]
+    # 1. Parallel Bulk Fetch via VPS (skip when running on Vercel serverless since VPS blocks/timeouts from cloud IPs)
+    is_vercel = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
+    if not is_vercel:
+        missing_indices = [s for s in missing_syms if s in _INDEX_SYMBOLS]
+        missing_stocks = [s for s in missing_syms if s not in _INDEX_SYMBOLS]
+        stock_chunks = [missing_stocks[i : i + 80] for i in range(0, len(missing_stocks), 80)]
 
-    bulk_tasks = len(stock_chunks) + (1 if any(s in _VPS_INDEX_CODE_TO_SYM.values() for s in missing_indices) else 0)
-    if bulk_tasks > 0:
-        with ThreadPoolExecutor(max_workers=min(bulk_tasks, 8)) as executor:
-            futures = [executor.submit(_fetch_vps_stock_chunk, ch) for ch in stock_chunks]
-            if any(s in _VPS_INDEX_CODE_TO_SYM.values() for s in missing_indices):
-                futures.append(executor.submit(_fetch_vps_indices))
-            for fut in futures:
-                try:
-                    fetched_map = fut.result()
-                    for sym, q_data in fetched_map.items():
-                        if sym in seen and q_data:
-                            _QUOTES_CACHE[sym] = (now + CACHE_TTL_QUOTES, q_data)
-                            results[sym] = q_data
-                except Exception as e:
-                    logger.debug(f"Bulk future error: {e}")
+        bulk_tasks = len(stock_chunks) + (1 if any(s in _VPS_INDEX_CODE_TO_SYM.values() for s in missing_indices) else 0)
+        if bulk_tasks > 0:
+            with ThreadPoolExecutor(max_workers=min(bulk_tasks, 8)) as executor:
+                futures = [executor.submit(_fetch_vps_stock_chunk, ch) for ch in stock_chunks]
+                if any(s in _VPS_INDEX_CODE_TO_SYM.values() for s in missing_indices):
+                    futures.append(executor.submit(_fetch_vps_indices))
+                for fut in futures:
+                    try:
+                        fetched_map = fut.result()
+                        for sym, q_data in fetched_map.items():
+                            if sym in seen and q_data:
+                                _QUOTES_CACHE[sym] = (now + CACHE_TTL_QUOTES, q_data)
+                                results[sym] = q_data
+                    except Exception as e:
+                        logger.debug(f"Bulk future error: {e}")
 
-    # 2. Fallback only for remaining symbols missing from VPS bulk API
+    # 2. Parallel VNDIRECT DChart fallback for remaining symbols (or all symbols when on Vercel)
     remaining_syms = [s for s in missing_syms if s not in results]
     if remaining_syms:
-        max_workers = min(len(remaining_syms), 15)
+        max_workers = min(len(remaining_syms), 20)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for sym, q_data in executor.map(_fetch_one_quote, remaining_syms):
                 if q_data:
