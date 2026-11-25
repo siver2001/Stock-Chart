@@ -152,6 +152,8 @@ export function getStockBrand(sym = '') {
 }
 
 // Real Company Logo Component with high-fidelity fallback to brand circle
+const INDEX_LOGO_SET = new Set(['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'])
+
 export function StockLogo({ symbol = '', size = 'normal', className = '' }) {
   const [loadFailed, setLoadFailed] = useState(false)
   const cleanSym = (symbol || '').trim().toUpperCase()
@@ -163,7 +165,7 @@ export function StockLogo({ symbol = '', size = 'normal', className = '' }) {
 
   if (!cleanSym) return null
 
-  if (loadFailed) {
+  if (loadFailed || INDEX_LOGO_SET.has(cleanSym)) {
     return (
       <div
         className={`tv-wl-logo-avatar ${size} ${className}`}

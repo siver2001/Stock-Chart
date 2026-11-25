@@ -73,6 +73,58 @@ export const resetChartScale = (chart, resetHorizontal = true) => {
   }
 }
 
+/**
+ * Cập nhật cây nến live vào KlineCharts an toàn:
+ * - Không bao giờ tạo nến trùng lặp cùng ngày (VN GMT+7) hay nến cuối tuần khi thị trường đóng cửa.
+ */
+const applyLiveBarToChart = (chart, bar, period) => {
+  if (!chart || !bar || !bar.timestamp) return
+  try {
+    const dataList = chart._chartStore?.getDataList?.() || []
+    const lastBar = dataList[dataList.length - 1]
+    if (!lastBar) {
+      chart.updateData(bar)
+      return
+    }
+
+    const timespan = period?.timespan || 'day'
+    let nextBar = bar
+
+    if (timespan === 'day' || timespan === 'week' || timespan === 'month') {
+      const toVnDate = (ts) => new Date(Number(ts) + 7 * 3600 * 1000)
+      const bDate = toVnDate(bar.timestamp)
+      const lDate = toVnDate(lastBar.timestamp)
+      const bKey = `${bDate.getUTCFullYear()}-${bDate.getUTCMonth()}-${bDate.getUTCDate()}`
+      const lKey = `${lDate.getUTCFullYear()}-${lDate.getUTCMonth()}-${lDate.getUTCDate()}`
+
+      const isWeekend = bDate.getUTCDay() === 0 || bDate.getUTCDay() === 6
+      const sameMonth =
+        bDate.getUTCFullYear() === lDate.getUTCFullYear() &&
+        bDate.getUTCMonth() === lDate.getUTCMonth()
+
+      if (
+        bKey === lKey ||
+        timespan === 'week' ||
+        (timespan === 'month' && sameMonth) ||
+        isWeekend ||
+        Number(bar.timestamp) <= Number(lastBar.timestamp)
+      ) {
+        nextBar = {
+          ...bar,
+          timestamp: lastBar.timestamp,
+          open: lastBar.open ?? bar.open,
+          high: Math.max(Number(lastBar.high || bar.close), Number(bar.high || bar.close)),
+          low: Math.min(Number(lastBar.low || bar.close), Number(bar.low || bar.close)),
+        }
+      }
+    }
+
+    chart.updateData(nextBar)
+  } catch {
+    chart.updateData(bar)
+  }
+}
+
 const getThemeStyles = (theme, chartType = 'candle_solid') => {
   const isDark = theme === 'dark'
   return {
@@ -964,10 +1016,10 @@ export default function App() {
 
       const createdActive = []
       for (const item of savedInds) {
-        if (!item || !item.name) continue
-        const indName = item.name
+        const indName = typeof item === 'string' ? item : item?.name
+        if (!indName) continue
         const meta = AVAILABLE_INDICATORS.find((i) => i.name === indName)
-        const isOverlay = meta ? meta.isOverlay : (item.isOverlay ?? true)
+        const isOverlay = meta ? meta.isOverlay : (item?.isOverlay ?? true)
         const isHidden = savedHidden.includes(indName)
 
         if (!isHidden) {
@@ -1008,7 +1060,12 @@ export default function App() {
           .then((cloudSettings) => {
             if (!cloudSettings) return
             const rawLocal = localStorage.getItem(STORAGE_KEYS.ACTIVE_INDICATORS)
-            if (!rawLocal && Array.isArray(cloudSettings.activeIndicators) && cloudSettings.activeIndicators.length > 0) {
+            let hasValidLocal = false
+            try {
+              const parsed = rawLocal ? JSON.parse(rawLocal) : null
+              hasValidLocal = Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0]?.name
+            } catch {}
+            if (!hasValidLocal && Array.isArray(cloudSettings.activeIndicators) && cloudSettings.activeIndicators.length > 0) {
               applyCloudIndicators(
                 cloudSettings.activeIndicators,
                 cloudSettings.hiddenIndicators,
@@ -1021,7 +1078,7 @@ export default function App() {
 
       // Subscribe for live polling
       datafeed.subscribe(activeSymbol, activePeriod, (bar) => {
-        chart.updateData(bar)
+        applyLiveBarToChart(chart, bar, activePeriodRef.current)
         setLatestBar((prev) => {
           const ref = bar.ref_price || prev?.ref_price || (bars.length >= 2 ? bars[bars.length - 2].close : bar.open)
           const diff = bar.close - ref
@@ -1159,7 +1216,7 @@ export default function App() {
     // 7. Kết nối polling thời gian thực cho mã mới
     datafeedRef.current.subscribe(ticker, activePeriodRef.current, (bar) => {
       if (requestId !== switchRequestIdRef.current) return
-      chartInstanceRef.current.updateData(bar)
+      applyLiveBarToChart(chartInstanceRef.current, bar, activePeriodRef.current)
       setLatestBar((prev) => {
         const ref = bar.ref_price || prev?.ref_price || bar.open
         const diff = bar.close - ref
@@ -1254,7 +1311,7 @@ export default function App() {
 
     datafeedRef.current.subscribe(activeSymbolRef.current, period, (bar) => {
       if (requestId !== switchRequestIdRef.current) return
-      chartInstanceRef.current.updateData(bar)
+      applyLiveBarToChart(chartInstanceRef.current, bar, period)
       setLatestBar((prev) => {
         const ref = bar.ref_price || prev?.ref_price || bar.open
         const diff = bar.close - ref
@@ -1356,13 +1413,13 @@ export default function App() {
       }
     })
 
-    // 2. Tạo mới theo danh sách từ Cloud
+    // 2. Tạo mới theo danh sách từ Cloud (hỗ trợ cả string ["MA"] lẫn object [{ name: "MA" }])
     const created = []
     for (const item of targetInds) {
-      if (!item || !item.name) continue
-      const indName = item.name
+      const indName = typeof item === 'string' ? item : item?.name
+      if (!indName) continue
       const meta = AVAILABLE_INDICATORS.find((i) => i.name === indName)
-      const isOverlay = meta ? meta.isOverlay : (item.isOverlay ?? true)
+      const isOverlay = meta ? meta.isOverlay : (item?.isOverlay ?? true)
       const isHidden = Array.isArray(targetHidden) && targetHidden.includes(indName)
 
       if (!isHidden) {
@@ -1395,7 +1452,8 @@ export default function App() {
     setActiveIndicators(created)
     setHiddenIndicators(targetHidden || [])
     try {
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_INDICATORS, JSON.stringify(targetInds))
+      const normalizedToSave = created.map((i) => ({ name: i.name, isOverlay: i.isOverlay }))
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_INDICATORS, JSON.stringify(normalizedToSave))
       localStorage.setItem(STORAGE_KEYS.HIDDEN_INDICATORS, JSON.stringify(targetHidden || []))
       if (targetParams && Object.keys(targetParams).length > 0) {
         localStorage.setItem(STORAGE_KEYS.INDICATOR_PARAMS, JSON.stringify(targetParams))

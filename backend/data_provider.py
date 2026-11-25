@@ -479,6 +479,14 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
 
     now_ts = int(now)
     from_ts = now_ts - 7 * 86400
+    # Align daily live quote timestamp to VN trading day 00:00:00 UTC (matches VNDIRECT DChart)
+    vn_dt = datetime.utcfromtimestamp(now_ts + 7 * 3600)
+    day_ts_ms = int(datetime(vn_dt.year, vn_dt.month, vn_dt.day).timestamp()) * 1000
+    try:
+        from datetime import timezone
+        day_ts_ms = int(datetime(vn_dt.year, vn_dt.month, vn_dt.day, tzinfo=timezone.utc).timestamp()) * 1000
+    except Exception:
+        pass
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -540,7 +548,7 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
                     "high": last_h,
                     "low": last_l,
                     "volume": last_v,
-                    "timestamp": int(now_ts * 1000),
+                    "timestamp": day_ts_ms,
                     "ref_price": ref_price,
                     "change": diff,
                     "pct_change": pct,
@@ -582,7 +590,7 @@ def fetch_live_quotes(symbols: List[str]) -> Dict[str, dict]:
                     "high": max(last_c, ref_price),
                     "low": min(last_c, ref_price),
                     "volume": last_v,
-                    "timestamp": int(now_ts * 1000),
+                    "timestamp": day_ts_ms,
                     "ref_price": ref_price,
                     "change": diff,
                     "pct_change": pct,

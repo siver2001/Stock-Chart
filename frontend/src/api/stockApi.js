@@ -219,6 +219,11 @@ async function fetchDirectDChartQuote(sym) {
   }
 }
 
+function getVnDayUtcMidnightMs(nowMs = Date.now()) {
+  const vnDate = new Date(nowMs + 7 * 3600 * 1000)
+  return Date.UTC(vnDate.getUTCFullYear(), vnDate.getUTCMonth(), vnDate.getUTCDate())
+}
+
 async function fetchQuotesDirectVPS(symList) {
   const results = {}
   const indexSyms = symList.filter((s) => INDEX_SYMBOLS.has(s))
@@ -230,6 +235,7 @@ async function fetchQuotesDirectVPS(symList) {
   }
 
   const nowMs = Date.now()
+  const dayTsMs = getVnDayUtcMidnightMs(nowMs)
   const needVpsIdx = indexSyms.some((s) => Object.values(VPS_INDEX_CODE_TO_SYM).includes(s))
 
   const tasks = stockChunks.map(async (chunk) => {
@@ -263,7 +269,7 @@ async function fetchQuotesDirectVPS(symList) {
         high: highRaw > 0 ? Math.round(highRaw * 1000) : close,
         low: lowRaw > 0 ? Math.round(lowRaw * 1000) : close,
         volume: Math.round((Number(item.lot) || 0) * 10),
-        timestamp: nowMs,
+        timestamp: dayTsMs,
         ref_price: finalRef,
         change: diff,
         pct_change: pct,
@@ -298,7 +304,7 @@ async function fetchQuotesDirectVPS(symList) {
             high: Math.max(close, refPrice),
             low: Math.min(close, refPrice),
             volume: Math.round(Number(item.vol) || 0),
-            timestamp: nowMs,
+            timestamp: dayTsMs,
             ref_price: refPrice,
             change: diff,
             pct_change: pct,
