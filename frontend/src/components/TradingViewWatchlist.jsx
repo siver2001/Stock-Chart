@@ -23,7 +23,12 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { fetchQuotes, searchSymbols } from '../api/stockApi'
-import { syncWatchlistCloud, fetchWatchlistCloud } from '../services/cloudStorage'
+import {
+  syncWatchlistCloud,
+  fetchWatchlistCloud,
+  subscribeRealtimeSync,
+  broadcastWatchlistSync,
+} from '../services/cloudStorage'
 import { isCloudEnabled } from '../lib/supabase'
 
 export const PRESET_WATCHLISTS = {
@@ -349,9 +354,14 @@ export default function TradingViewWatchlist({
     }
   }, [])
 
-  // Background Cloud Restore on mount & Sync Key change listener
+  // Background Cloud Restore on mount & Realtime Broadcast Sync listener
   const hasLoadedCloudRef = useRef(false)
   const isFirstRenderRef = useRef(true)
+  const lastWatchlistSnapshotRef = useRef('')
+  const symbolsRef = useRef(symbols)
+  symbolsRef.current = symbols
+  const symbolFlagsRef = useRef(symbolFlags)
+  symbolFlagsRef.current = symbolFlags
 
   const reloadFromCloud = useCallback(() => {
     if (!isCloudEnabled()) {
@@ -363,13 +373,21 @@ export default function TradingViewWatchlist({
         hasLoadedCloudRef.current = true
         return
       }
-      if (Array.isArray(cloudData.symbols) && cloudData.symbols.length > 0) {
-        setSymbols(cloudData.symbols)
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData.symbols)) } catch {}
+      const nextSyms = Array.isArray(cloudData.symbols) && cloudData.symbols.length > 0 ? cloudData.symbols : null
+      const nextFlags = cloudData.flags && typeof cloudData.flags === 'object' ? cloudData.flags : null
+      if (nextSyms || nextFlags) {
+        lastWatchlistSnapshotRef.current = JSON.stringify({
+          symbols: nextSyms || symbolsRef.current,
+          flags: nextFlags || symbolFlagsRef.current,
+        })
       }
-      if (cloudData.flags && typeof cloudData.flags === 'object') {
-        setSymbolFlags(cloudData.flags)
-        try { localStorage.setItem(FLAGS_STORAGE_KEY, JSON.stringify(cloudData.flags)) } catch {}
+      if (nextSyms) {
+        setSymbols(nextSyms)
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSyms)) } catch {}
+      }
+      if (nextFlags) {
+        setSymbolFlags(nextFlags)
+        try { localStorage.setItem(FLAGS_STORAGE_KEY, JSON.stringify(nextFlags)) } catch {}
       }
       hasLoadedCloudRef.current = true
     }).catch(() => {
@@ -380,14 +398,39 @@ export default function TradingViewWatchlist({
   useEffect(() => {
     reloadFromCloud()
 
+    const unsubRt = isCloudEnabled()
+      ? subscribeRealtimeSync({
+          onWatchlistSync: (payload) => {
+            if (!payload) return
+            const nextSyms = Array.isArray(payload.symbols) && payload.symbols.length > 0 ? payload.symbols : null
+            const nextFlags = payload.flags && typeof payload.flags === 'object' ? payload.flags : null
+            if (nextSyms || nextFlags) {
+              lastWatchlistSnapshotRef.current = JSON.stringify({
+                symbols: nextSyms || symbolsRef.current,
+                flags: nextFlags || symbolFlagsRef.current,
+              })
+            }
+            if (nextSyms) {
+              setSymbols(nextSyms)
+              try { localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSyms)) } catch {}
+            }
+            if (nextFlags) {
+              setSymbolFlags(nextFlags)
+              try { localStorage.setItem(FLAGS_STORAGE_KEY, JSON.stringify(nextFlags)) } catch {}
+            }
+          },
+        })
+      : () => {}
+
     const handleSyncEvent = () => reloadFromCloud()
     window.addEventListener('vn_stock_reload_cloud_watchlist', handleSyncEvent)
     return () => {
+      unsubRt()
       window.removeEventListener('vn_stock_reload_cloud_watchlist', handleSyncEvent)
     }
   }, [reloadFromCloud])
 
-  // Debounced Cloud Sync for Watchlist (only after initial load has completed)
+  // Debounced Cloud Sync + Instant Realtime Broadcast for Watchlist (only after initial load has completed)
   const watchlistCloudTimerRef = useRef(null)
   useEffect(() => {
     if (!isCloudEnabled()) return
@@ -397,10 +440,19 @@ export default function TradingViewWatchlist({
     }
     if (!hasLoadedCloudRef.current) return
 
+    const currentSnapshot = JSON.stringify({ symbols, flags: symbolFlags })
+    if (currentSnapshot === lastWatchlistSnapshotRef.current) {
+      return
+    }
+    lastWatchlistSnapshotRef.current = currentSnapshot
+
+    // Instant broadcast to other open machines (~0.1s)
+    broadcastWatchlistSync(symbols, symbolFlags)
+
     if (watchlistCloudTimerRef.current) clearTimeout(watchlistCloudTimerRef.current)
     watchlistCloudTimerRef.current = setTimeout(() => {
       syncWatchlistCloud(symbols, symbolFlags)
-    }, 1500)
+    }, 1000)
     return () => {
       if (watchlistCloudTimerRef.current) clearTimeout(watchlistCloudTimerRef.current)
     }

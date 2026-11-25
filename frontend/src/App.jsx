@@ -21,6 +21,10 @@ import {
   deleteDrawingsCloud,
   syncChartSettingsCloud,
   fetchChartSettingsCloud,
+  subscribeRealtimeSync,
+  reconnectRealtimeSync,
+  broadcastDrawingSync,
+  broadcastSettingsSync,
 } from './services/cloudStorage'
 import CloudSyncModal from './components/CloudSyncModal'
 import { isCloudEnabled } from './lib/supabase'
@@ -260,6 +264,8 @@ export default function App() {
 
   // Active indicators on chart: array of { name, paneId, isOverlay }
   const [activeIndicators, setActiveIndicators] = useState([])
+  const activeIndicatorsRef = useRef(activeIndicators)
+  activeIndicatorsRef.current = activeIndicators
   const [hiddenIndicators, setHiddenIndicators] = useState([])
   const [latestBar, setLatestBar] = useState(null)
   const [isChartLoading, setIsChartLoading] = useState(false)
@@ -348,10 +354,11 @@ export default function App() {
   const [drawingsCount, setDrawingsCount] = useState(0)
   const [cloudSyncStatus, setCloudSyncStatus] = useState(() => (isCloudEnabled() ? 'synced' : 'local'))
   const cloudDebounceTimerRef = useRef(null)
+  const broadcastDrawingTimerRef = useRef(null)
   const activeSymbolRef = useRef(activeSymbol)
   activeSymbolRef.current = activeSymbol
 
-  // Save all completed drawings for a specific symbol to localStorage & Supabase Cloud
+  // Save all completed drawings for a specific symbol to localStorage & Supabase Cloud (+ Realtime Broadcast)
   const saveDrawingsForSymbol = useCallback((symbol) => {
     const sym = symbol || activeSymbolRef.current
     if (!chartInstanceRef.current || !sym) return
@@ -387,11 +394,26 @@ export default function App() {
         }))
 
       const storageKey = `vn_drawings_${sym.toUpperCase()}`
-      localStorage.setItem(storageKey, JSON.stringify(validOverlays))
+      const prevJson = localStorage.getItem(storageKey)
+      const nextJson = JSON.stringify(validOverlays)
+      localStorage.setItem(storageKey, nextJson)
       setDrawingsCount(validOverlays.length)
 
-      // Debounced Cloud Sync (1.2s after last drawing edit)
+      // Skip network broadcast & DB write when switching untouched symbols
+      if (prevJson === nextJson && prevJson !== null) {
+        return
+      }
+
       if (isCloudEnabled()) {
+        // 1. Instant Realtime Broadcast to other open devices (~120ms debounce)
+        if (broadcastDrawingTimerRef.current) {
+          clearTimeout(broadcastDrawingTimerRef.current)
+        }
+        broadcastDrawingTimerRef.current = setTimeout(() => {
+          broadcastDrawingSync(sym, validOverlays)
+        }, 120)
+
+        // 2. Durable PostgreSQL upsert (1.0s debounce)
         if (cloudDebounceTimerRef.current) {
           clearTimeout(cloudDebounceTimerRef.current)
         }
@@ -407,7 +429,7 @@ export default function App() {
           } catch {
             setCloudSyncStatus('local')
           }
-        }, 1200)
+        }, 1000)
       } else {
         setCloudSyncStatus('local')
       }
@@ -415,6 +437,47 @@ export default function App() {
       console.warn('Failed to save drawings:', err)
     }
   }, [])
+
+  // Shared helper to render a list of saved/remote overlays onto the active chart
+  const renderOverlaysOnChart = useCallback(
+    (overlayList, targetSym) => {
+      if (!chartInstanceRef.current || !Array.isArray(overlayList)) return
+      const sym = targetSym || activeSymbolRef.current
+      chartInstanceRef.current.removeOverlay()
+      overlayList.forEach((item) => {
+        if (!item.name || !item.points || item.points.length === 0) return
+        chartInstanceRef.current.createOverlay(
+          {
+            id: item.id,
+            name: item.name,
+            groupId: item.groupId,
+            points: item.points,
+            styles: item.styles,
+            lock: item.lock,
+            visible: item.visible,
+            mode: item.mode,
+            extendData: item.extendData,
+            onSelected: (event) => setSelectedOverlay(event.overlay),
+            onDeselected: () => setSelectedOverlay(null),
+            onRightClick: (event) => {
+              if (event?.overlay?.id) {
+                chartInstanceRef.current.removeOverlay(event.overlay.id)
+                setTimeout(() => saveDrawingsForSymbol(sym), 60)
+              }
+              setSelectedOverlay(null)
+              return true
+            },
+            onPressedMoveEnd: () => {
+              setTimeout(() => saveDrawingsForSymbol(sym), 60)
+            },
+          },
+          item.paneId || 'candle_pane'
+        )
+      })
+      setDrawingsCount(overlayList.length)
+    },
+    [saveDrawingsForSymbol]
+  )
 
   // Restore saved drawings for a symbol from localStorage & Supabase Cloud
   const restoreDrawingsForSymbol = useCallback(
@@ -431,45 +494,9 @@ export default function App() {
           } catch {}
         }
 
-        const renderOverlays = (overlayList) => {
-          if (!chartInstanceRef.current || !Array.isArray(overlayList)) return
-          chartInstanceRef.current.removeOverlay()
-          overlayList.forEach((item) => {
-            if (!item.name || !item.points || item.points.length === 0) return
-            chartInstanceRef.current.createOverlay(
-              {
-                id: item.id,
-                name: item.name,
-                groupId: item.groupId,
-                points: item.points,
-                styles: item.styles,
-                lock: item.lock,
-                visible: item.visible,
-                mode: item.mode,
-                extendData: item.extendData,
-                onSelected: (event) => setSelectedOverlay(event.overlay),
-                onDeselected: () => setSelectedOverlay(null),
-                onRightClick: (event) => {
-                  if (event?.overlay?.id) {
-                    chartInstanceRef.current.removeOverlay(event.overlay.id)
-                    setTimeout(() => saveDrawingsForSymbol(sym), 60)
-                  }
-                  setSelectedOverlay(null)
-                  return true
-                },
-                onPressedMoveEnd: () => {
-                  setTimeout(() => saveDrawingsForSymbol(sym), 60)
-                },
-              },
-              item.paneId || 'candle_pane'
-            )
-          })
-          setDrawingsCount(overlayList.length)
-        }
-
         // 1. Khôi phục tức thì từ localStorage (0ms độ trễ)
         if (Array.isArray(list) && list.length > 0) {
-          renderOverlays(list)
+          renderOverlaysOnChart(list, sym)
         } else {
           setDrawingsCount(0)
         }
@@ -485,7 +512,7 @@ export default function App() {
                 if (cloudData.overlays.length > 0 && cloudJson !== localJson) {
                   localStorage.setItem(storageKey, cloudJson)
                   if (activeSymbolRef.current.toUpperCase() === sym.toUpperCase()) {
-                    renderOverlays(cloudData.overlays)
+                    renderOverlaysOnChart(cloudData.overlays, sym)
                   }
                 }
               }
@@ -502,7 +529,7 @@ export default function App() {
         setDrawingsCount(0)
       }
     },
-    [saveDrawingsForSymbol]
+    [renderOverlaysOnChart]
   )
 
   // Cancel currently drawing overlay or deselect
@@ -1277,7 +1304,7 @@ export default function App() {
   // Debounce ref for syncing chart settings & indicators to Supabase Cloud
   const chartSettingsTimerRef = useRef(null)
 
-  // Persist Active & Hidden Indicators to localStorage & Supabase Cloud
+  // Persist Active & Hidden Indicators to localStorage & Supabase Cloud (+ Realtime Broadcast)
   const persistActiveIndicators = (indicators, hidden) => {
     try {
       const toSave = indicators.map((i) => ({ name: i.name, isOverlay: i.isOverlay }))
@@ -1286,23 +1313,31 @@ export default function App() {
         localStorage.setItem(STORAGE_KEYS.HIDDEN_INDICATORS, JSON.stringify(hidden))
       }
 
-      // Debounced Cloud Sync for chart settings (1.2s sau thao tác cuối)
       if (isCloudEnabled()) {
+        let pMap = {}
+        try {
+          const rawP = localStorage.getItem(STORAGE_KEYS.INDICATOR_PARAMS)
+          if (rawP) pMap = JSON.parse(rawP) || {}
+        } catch {}
+        const nextHidden = hidden !== undefined ? hidden : hiddenIndicators
+
+        // Instant Realtime Broadcast to other open devices
+        broadcastSettingsSync({
+          activeIndicators: toSave,
+          hiddenIndicators: nextHidden,
+          indicatorParams: pMap,
+        })
+
         if (chartSettingsTimerRef.current) clearTimeout(chartSettingsTimerRef.current)
         chartSettingsTimerRef.current = setTimeout(() => {
-          let pMap = {}
-          try {
-            const rawP = localStorage.getItem(STORAGE_KEYS.INDICATOR_PARAMS)
-            if (rawP) pMap = JSON.parse(rawP) || {}
-          } catch {}
           syncChartSettingsCloud({
             theme,
             chartType,
             activeIndicators: toSave,
-            hiddenIndicators: hidden !== undefined ? hidden : hiddenIndicators,
+            hiddenIndicators: nextHidden,
             indicatorParams: pMap,
           })
-        }, 1200)
+        }, 1000)
       }
     } catch (e) {
       console.warn('Failed to persist active indicators:', e)
@@ -1310,66 +1345,63 @@ export default function App() {
   }
 
   // Khôi phục chỉ báo từ Supabase Cloud vào biểu đồ
-  const applyCloudIndicators = useCallback(
-    (targetInds, targetHidden = [], targetParams = {}) => {
-      if (!chartInstanceRef.current || !Array.isArray(targetInds)) return
-      const chart = chartInstanceRef.current
+  const applyCloudIndicators = useCallback((targetInds, targetHidden = [], targetParams = {}) => {
+    if (!chartInstanceRef.current || !Array.isArray(targetInds)) return
+    const chart = chartInstanceRef.current
 
-      // 1. Gỡ sạch các indicator đang hiển thị
-      activeIndicators.forEach((i) => {
-        if (i.paneId) {
-          try { chart.removeIndicator(i.paneId, i.name) } catch {}
-        }
-      })
-
-      // 2. Tạo mới theo danh sách từ Cloud
-      const created = []
-      for (const item of targetInds) {
-        if (!item || !item.name) continue
-        const indName = item.name
-        const meta = AVAILABLE_INDICATORS.find((i) => i.name === indName)
-        const isOverlay = meta ? meta.isOverlay : (item.isOverlay ?? true)
-        const isHidden = Array.isArray(targetHidden) && targetHidden.includes(indName)
-
-        if (!isHidden) {
-          let paneId = null
-          if (isOverlay) {
-            paneId = chart.createIndicator(indName, true, { id: 'candle_pane' })
-          } else {
-            const paneHeight = indName === 'VOL' ? 95 : 105
-            paneId = chart.createIndicator(indName, false, {
-              height: paneHeight,
-              dragEnabled: true,
-              minHeight: 40,
-              gap: { top: 0.12, bottom: 0.08 },
-            })
-          }
-          if (paneId) {
-            const customParams = targetParams[indName]
-            if (customParams && Array.isArray(customParams)) {
-              try {
-                chart.overrideIndicator({ name: indName, calcParams: customParams }, paneId)
-              } catch {}
-            }
-            created.push({ name: indName, paneId, isOverlay })
-          }
-        } else {
-          created.push({ name: indName, paneId: null, isOverlay })
-        }
+    // 1. Gỡ sạch các indicator đang hiển thị (use ref to keep callback identity stable)
+    ;(activeIndicatorsRef.current || []).forEach((i) => {
+      if (i.paneId) {
+        try { chart.removeIndicator(i.paneId, i.name) } catch {}
       }
+    })
 
-      setActiveIndicators(created)
-      setHiddenIndicators(targetHidden || [])
-      try {
-        localStorage.setItem(STORAGE_KEYS.ACTIVE_INDICATORS, JSON.stringify(targetInds))
-        localStorage.setItem(STORAGE_KEYS.HIDDEN_INDICATORS, JSON.stringify(targetHidden || []))
-        if (targetParams && Object.keys(targetParams).length > 0) {
-          localStorage.setItem(STORAGE_KEYS.INDICATOR_PARAMS, JSON.stringify(targetParams))
+    // 2. Tạo mới theo danh sách từ Cloud
+    const created = []
+    for (const item of targetInds) {
+      if (!item || !item.name) continue
+      const indName = item.name
+      const meta = AVAILABLE_INDICATORS.find((i) => i.name === indName)
+      const isOverlay = meta ? meta.isOverlay : (item.isOverlay ?? true)
+      const isHidden = Array.isArray(targetHidden) && targetHidden.includes(indName)
+
+      if (!isHidden) {
+        let paneId = null
+        if (isOverlay) {
+          paneId = chart.createIndicator(indName, true, { id: 'candle_pane' })
+        } else {
+          const paneHeight = indName === 'VOL' ? 95 : 105
+          paneId = chart.createIndicator(indName, false, {
+            height: paneHeight,
+            dragEnabled: true,
+            minHeight: 40,
+            gap: { top: 0.12, bottom: 0.08 },
+          })
         }
-      } catch {}
-    },
-    [activeIndicators]
-  )
+        if (paneId) {
+          const customParams = targetParams[indName]
+          if (customParams && Array.isArray(customParams)) {
+            try {
+              chart.overrideIndicator({ name: indName, calcParams: customParams }, paneId)
+            } catch {}
+          }
+          created.push({ name: indName, paneId, isOverlay })
+        }
+      } else {
+        created.push({ name: indName, paneId: null, isOverlay })
+      }
+    }
+
+    setActiveIndicators(created)
+    setHiddenIndicators(targetHidden || [])
+    try {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_INDICATORS, JSON.stringify(targetInds))
+      localStorage.setItem(STORAGE_KEYS.HIDDEN_INDICATORS, JSON.stringify(targetHidden || []))
+      if (targetParams && Object.keys(targetParams).length > 0) {
+        localStorage.setItem(STORAGE_KEYS.INDICATOR_PARAMS, JSON.stringify(targetParams))
+      }
+    } catch {}
+  }, [])
 
   // Lắng nghe sự kiện đổi Sync Key hoặc ép đồng bộ để tải lại chỉ báo
   useEffect(() => {
@@ -1387,6 +1419,60 @@ export default function App() {
       window.removeEventListener('vn_stock_reload_cloud_indicators', handleReload)
     }
   }, [applyCloudIndicators])
+
+  // Real-time Cross-Device Sync Listener (Drawings & Indicators live across open machines!)
+  useEffect(() => {
+    if (!isCloudEnabled()) return
+    const unsub = subscribeRealtimeSync({
+      onDrawingSync: async (payload) => {
+        const ticker = (payload?.symbol || '').toUpperCase()
+        if (!ticker) return
+        let overlayList = Array.isArray(payload.overlays) ? payload.overlays : null
+        if (payload.fetchFromCloud || !overlayList) {
+          const cloudData = await fetchDrawingsCloud(ticker)
+          if (cloudData && Array.isArray(cloudData.overlays)) {
+            overlayList = cloudData.overlays
+          }
+        }
+        if (!Array.isArray(overlayList)) return
+        const storageKey = `vn_drawings_${ticker}`
+        const nextJson = JSON.stringify(overlayList)
+        const prevJson = localStorage.getItem(storageKey)
+        if (prevJson === nextJson) return
+        localStorage.setItem(storageKey, nextJson)
+        if (activeSymbolRef.current.toUpperCase() === ticker && chartInstanceRef.current) {
+          if (!inProgressOverlayIdRef.current) {
+            renderOverlaysOnChart(overlayList, ticker)
+            setCloudSyncStatus('synced')
+          }
+        }
+      },
+      onSettingsSync: (payload) => {
+        if (Array.isArray(payload?.activeIndicators)) {
+          applyCloudIndicators(
+            payload.activeIndicators,
+            payload.hiddenIndicators || [],
+            payload.indicatorParams || {}
+          )
+        }
+      },
+    })
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        reconnectRealtimeSync()
+        if (activeSymbolRef.current) {
+          restoreDrawingsForSymbol(activeSymbolRef.current)
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      unsub()
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [renderOverlaysOnChart, restoreDrawingsForSymbol, applyCloudIndicators])
 
   // Add / Remove Indicator
   const handleToggleIndicator = (indicatorName) => {

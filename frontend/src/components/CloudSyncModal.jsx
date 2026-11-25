@@ -13,7 +13,13 @@ import {
   Key,
 } from 'lucide-react'
 import { isCloudEnabled, getSyncKey, setSyncKey, DEFAULT_SYNC_KEY } from '../lib/supabase'
-import { syncWatchlistCloud, fetchWatchlistCloud, syncChartSettingsCloud, fetchChartSettingsCloud } from '../services/cloudStorage'
+import {
+  syncWatchlistCloud,
+  fetchWatchlistCloud,
+  syncChartSettingsCloud,
+  fetchChartSettingsCloud,
+  reconnectRealtimeSync,
+} from '../services/cloudStorage'
 
 export default function CloudSyncModal({
   isOpen,
@@ -61,6 +67,7 @@ export default function CloudSyncModal({
     const finalKey = target || DEFAULT_SYNC_KEY
     setSyncKey(finalKey)
     setCurrentKey(finalKey)
+    reconnectRealtimeSync()
 
     setMessage({
       type: 'success',

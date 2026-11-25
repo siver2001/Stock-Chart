@@ -3,7 +3,13 @@
  * Hỗ trợ lưu trữ nét vẽ kỹ thuật (Drawings) và Danh mục theo dõi (Watchlist)
  * Cơ chế: Hybrid Offline-First (localStorage + Cloud Debounce)
  */
-import { supabase, isCloudEnabled, getDeviceId } from '../lib/supabase'
+import { supabase, isCloudEnabled, getDeviceId, getSyncKey } from '../lib/supabase'
+
+// Unique ID per browser tab so we never echo our own Realtime broadcasts back to ourselves
+export const CLIENT_TAB_ID =
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8)
 
 // ==============================================================================
 // 1. ĐỒNG BỘ NÉT VẼ PHÂN TÍCH KỸ THUẬT (CHART DRAWINGS)
@@ -100,6 +106,7 @@ export async function deleteDrawingsCloud(symbol) {
 
   const ticker = (symbol || '').toUpperCase()
   try {
+    broadcastDrawingSync(ticker, [])
     const deviceId = getDeviceId()
     await supabase
       .from('chart_drawings')
@@ -281,4 +288,137 @@ export async function fetchChartSettingsCloud() {
     console.warn('[CloudSync] Lỗi tải cấu hình biểu đồ từ Cloud:', err)
     return null
   }
+}
+
+// ==============================================================================
+// 4. ĐỒNG BỘ THỜI GIAN THỰC ĐA THIẾT BỊ (SUPABASE REALTIME BROADCAST HUB)
+// ==============================================================================
+
+let _rtChannel = null
+let _rtChannelKey = null
+let _rtSubscribed = false
+const _drawingListeners = new Set()
+const _watchlistListeners = new Set()
+const _settingsListeners = new Set()
+
+function ensureRealtimeChannel() {
+  if (!isCloudEnabled() || !supabase) return null
+  const activeKey = getSyncKey()
+
+  if (_rtChannel && _rtChannelKey === activeKey) {
+    return _rtChannel
+  }
+
+  if (_rtChannel) {
+    try {
+      supabase.removeChannel(_rtChannel)
+    } catch {}
+    _rtChannel = null
+    _rtSubscribed = false
+  }
+
+  _rtChannelKey = activeKey
+  const channelName = `vn_stock_rt_${activeKey}`
+  const ch = supabase.channel(channelName, {
+    config: {
+      broadcast: { self: false },
+    },
+  })
+
+  ch.on('broadcast', { event: 'drawing_sync' }, ({ payload }) => {
+    if (!payload || payload.senderId === CLIENT_TAB_ID) return
+    _drawingListeners.forEach((fn) => {
+      try { fn(payload) } catch {}
+    })
+  })
+
+  ch.on('broadcast', { event: 'watchlist_sync' }, ({ payload }) => {
+    if (!payload || payload.senderId === CLIENT_TAB_ID) return
+    _watchlistListeners.forEach((fn) => {
+      try { fn(payload) } catch {}
+    })
+  })
+
+  ch.on('broadcast', { event: 'settings_sync' }, ({ payload }) => {
+    if (!payload || payload.senderId === CLIENT_TAB_ID) return
+    _settingsListeners.forEach((fn) => {
+      try { fn(payload) } catch {}
+    })
+  })
+
+  ch.subscribe((status) => {
+    _rtSubscribed = status === 'SUBSCRIBED'
+  })
+
+  _rtChannel = ch
+  return ch
+}
+
+export function reconnectRealtimeSync() {
+  if (_rtChannel && supabase) {
+    try {
+      supabase.removeChannel(_rtChannel)
+    } catch {}
+  }
+  _rtChannel = null
+  _rtChannelKey = null
+  _rtSubscribed = false
+  return ensureRealtimeChannel()
+}
+
+export function subscribeRealtimeSync({ onDrawingSync, onWatchlistSync, onSettingsSync } = {}) {
+  if (!isCloudEnabled() || !supabase) return () => {}
+  ensureRealtimeChannel()
+
+  if (onDrawingSync) _drawingListeners.add(onDrawingSync)
+  if (onWatchlistSync) _watchlistListeners.add(onWatchlistSync)
+  if (onSettingsSync) _settingsListeners.add(onSettingsSync)
+
+  return () => {
+    if (onDrawingSync) _drawingListeners.delete(onDrawingSync)
+    if (onWatchlistSync) _watchlistListeners.delete(onWatchlistSync)
+    if (onSettingsSync) _settingsListeners.delete(onSettingsSync)
+  }
+}
+
+async function sendRealtimeBroadcast(event, payload) {
+  if (!isCloudEnabled() || !supabase) return
+  try {
+    const ch = ensureRealtimeChannel()
+    if (!ch) return
+    await ch.send({
+      type: 'broadcast',
+      event,
+      payload: {
+        ...payload,
+        senderId: CLIENT_TAB_ID,
+        ts: Date.now(),
+      },
+    })
+  } catch (err) {
+    console.warn(`[RealtimeSync] Broadcast ${event} error:`, err)
+  }
+}
+
+export function broadcastDrawingSync(symbol, overlays) {
+  const ticker = (symbol || '').toUpperCase()
+  if (!ticker) return
+  const list = Array.isArray(overlays) ? overlays : []
+  const jsonLen = JSON.stringify(list).length
+  if (jsonLen > 80000) {
+    // Payload too large for broadcast frame -> signal receiver to pull directly from Supabase DB
+    sendRealtimeBroadcast('drawing_sync', { symbol: ticker, fetchFromCloud: true })
+  } else {
+    sendRealtimeBroadcast('drawing_sync', { symbol: ticker, overlays: list })
+  }
+}
+
+export function broadcastWatchlistSync(symbols, flags) {
+  if (!Array.isArray(symbols)) return
+  sendRealtimeBroadcast('watchlist_sync', { symbols, flags: flags || {} })
+}
+
+export function broadcastSettingsSync(settings) {
+  if (!settings) return
+  sendRealtimeBroadcast('settings_sync', settings)
 }
