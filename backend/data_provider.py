@@ -774,7 +774,7 @@ def fetch_ohlcv(
             to_ts = now_ts
     else:
         # Bucket to_ts (300s for daily/weekly/monthly, 30s for intraday) so repeated calls share cache key!
-        bucket = 300 if norm_interval in ("1D", "1W", "1M", "2D", "3D") else 30
+        bucket = 30 if norm_interval.endswith(("m", "h")) else 300
         to_ts = (now_ts // bucket) * bucket
 
     if start_date:
@@ -783,12 +783,22 @@ def fetch_ohlcv(
         except Exception:
             from_ts = to_ts - 730 * 86400
     else:
-        if norm_interval in ("1D", "1W", "1M", "2D", "3D"):
-            from_ts = to_ts - 730 * 86400  # 2 years
-        elif norm_interval in ("1H", "1h", "2H", "2h", "3H", "3h", "4H", "4h"):
-            from_ts = to_ts - 90 * 86400   # 90 days
+        if norm_interval.endswith("M"):
+            from_ts = to_ts - 3650 * 86400  # 10 years for 1M / 3M / 6M / 12M
+        elif norm_interval.endswith("W"):
+            from_ts = to_ts - 1825 * 86400  # 5 years for 1W / 2W
+        elif norm_interval.endswith("D") or norm_interval == "D":
+            digits = "".join(c for c in norm_interval if c.isdigit())
+            d_mult = int(digits) if digits else 1
+            from_ts = to_ts - (1460 if d_mult > 1 else 730) * 86400
+        elif norm_interval.lower().endswith("h"):
+            from_ts = to_ts - 180 * 86400   # 180 days for 1H..12H
+        elif norm_interval.endswith("m"):
+            digits = "".join(c for c in norm_interval if c.isdigit())
+            mins = int(digits) if digits else 1
+            from_ts = to_ts - (60 if mins >= 15 and mins % 15 == 0 else 14) * 86400
         else:
-            from_ts = to_ts - 30 * 86400   # 30 days
+            from_ts = to_ts - 730 * 86400
 
     cache_key = f"{symbol}:{from_ts}:{to_ts}:{norm_interval}"
     now = time.time()

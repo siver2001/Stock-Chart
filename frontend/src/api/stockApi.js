@@ -19,13 +19,122 @@ export async function searchSymbols(query = '') {
   return data.symbols || []
 }
 
-const NATIVE_DCHART_MAP = {
-  '1D': { res: 'D', lookbackDays: 730 },
-  D: { res: 'D', lookbackDays: 730 },
-  '1H': { res: '60', lookbackDays: 90 },
-  '1h': { res: '60', lookbackDays: 90 },
-  '15m': { res: '15', lookbackDays: 30 },
-  '1m': { res: '1', lookbackDays: 30 },
+function parseIntervalSpec(interval = '1D') {
+  const s = String(interval || '1D').trim()
+  const match = s.match(/^(\d+)([a-zA-Z]+)$/)
+  if (!match) {
+    if (s.toUpperCase() === 'D') return { mult: 1, unit: 'D' }
+    if (s.toUpperCase() === 'W') return { mult: 1, unit: 'W' }
+    return { mult: 1, unit: 'D' }
+  }
+  const mult = Math.max(1, parseInt(match[1], 10))
+  const rawUnit = match[2]
+  if (rawUnit === 'M' || rawUnit === 'mo' || rawUnit === 'MO') return { mult, unit: 'M' }
+  const lower = rawUnit.toLowerCase()
+  if (lower.startsWith('m')) return { mult, unit: 'm' }
+  if (lower.startsWith('h')) return { mult, unit: 'h' }
+  if (lower.startsWith('w')) return { mult, unit: 'W' }
+  return { mult, unit: 'D' }
+}
+
+function getDChartSourceSpec(interval) {
+  const { mult, unit } = parseIntervalSpec(interval)
+  if (unit === 'm') {
+    if (mult >= 15 && mult % 15 === 0) {
+      return { res: '15', lookbackDays: 60, targetUnit: 'm', targetMult: mult }
+    }
+    return { res: '1', lookbackDays: 14, targetUnit: 'm', targetMult: mult }
+  }
+  if (unit === 'h') {
+    return { res: '60', lookbackDays: mult >= 6 ? 270 : 180, targetUnit: 'h', targetMult: mult }
+  }
+  if (unit === 'W') {
+    return { res: 'D', lookbackDays: mult > 1 ? 2555 : 1825, targetUnit: 'W', targetMult: mult }
+  }
+  if (unit === 'M') {
+    return { res: 'D', lookbackDays: mult >= 3 ? 5475 : 3650, targetUnit: 'M', targetMult: mult }
+  }
+  // Daily (1D, 2D, 3D, 5D...)
+  return { res: 'D', lookbackDays: mult > 1 ? 1460 : 730, targetUnit: 'D', targetMult: mult }
+}
+
+function getBucketTimestamp(tsMs, unit, mult) {
+  const VN_OFFSET_MS = 7 * 3600 * 1000
+  if (unit === 'm') {
+    const stepMs = mult * 60 * 1000
+    return Math.floor(tsMs / stepMs) * stepMs
+  }
+  if (unit === 'h') {
+    // Session-aware VN trading hour buckets so 2h/3h/4h/6h aggregate intraday bars cleanly
+    const vn = new Date(tsMs + VN_OFFSET_MS)
+    const dayStartMs = Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate()) - VN_OFFSET_MS
+    const vnHour = vn.getUTCHours()
+    // Anchor at 09:00 VN trading open (or 00:00 if multi-hour >= 6h)
+    const anchorHour = mult >= 6 ? 0 : 9
+    const relHours = Math.max(0, vnHour - anchorHour)
+    const bucketIndex = Math.floor(relHours / mult)
+    return dayStartMs + (anchorHour + bucketIndex * mult) * 3600 * 1000
+  }
+  const vn = new Date(tsMs + VN_OFFSET_MS)
+  const y = vn.getUTCFullYear()
+  const m = vn.getUTCMonth()
+  const d = vn.getUTCDate()
+  if (unit === 'D') {
+    if (mult === 1) return tsMs
+    const dayNum = Math.floor(Date.UTC(y, m, d) / 86400000)
+    return Math.floor(dayNum / mult) * mult * 86400000
+  }
+  if (unit === 'W') {
+    // Monday start of ISO week (UTC midnight matching DChart daily convention)
+    const dayOfWeek = (vn.getUTCDay() + 6) % 7 // Monday = 0 .. Sunday = 6
+    const mondayMs = Date.UTC(y, m, d - dayOfWeek)
+    if (mult === 1) return mondayMs
+    const weekNum = Math.floor(mondayMs / (7 * 86400000))
+    return Math.floor(weekNum / mult) * mult * 7 * 86400000
+  }
+  if (unit === 'M') {
+    const monthIndex = y * 12 + m
+    const bucketMonth = Math.floor(monthIndex / mult) * mult
+    const by = Math.floor(bucketMonth / 12)
+    const bm = bucketMonth % 12
+    return Date.UTC(by, bm, 1)
+  }
+  return tsMs
+}
+
+function resampleBars(bars, unit, mult) {
+  if (!Array.isArray(bars) || bars.length === 0) return []
+  const isNative =
+    (unit === 'D' && mult === 1) ||
+    (unit === 'h' && mult === 1) ||
+    (unit === 'm' && (mult === 1 || mult === 15))
+  if (isNative) return bars
+
+  const out = []
+  let cur = null
+  let curBucket = null
+  for (const b of bars) {
+    const bucket = getBucketTimestamp(b.timestamp, unit, mult)
+    if (cur === null || bucket !== curBucket) {
+      if (cur !== null) out.push(cur)
+      curBucket = bucket
+      cur = {
+        timestamp: bucket,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        volume: b.volume || 0,
+      }
+    } else {
+      if (b.high > cur.high) cur.high = b.high
+      if (b.low < cur.low) cur.low = b.low
+      cur.close = b.close
+      cur.volume += b.volume || 0
+    }
+  }
+  if (cur !== null) out.push(cur)
+  return out
 }
 
 function normalizeEpochSec(val) {
@@ -79,24 +188,25 @@ function parseDChartBars(data, ticker) {
 export async function fetchHistory({ symbol, interval = '1D', from, to }) {
   const ticker = String(symbol || 'VNINDEX').trim().toUpperCase()
   const intKey = String(interval || '1D').trim()
-  const nativeSpec = NATIVE_DCHART_MAP[intKey]
+  const spec = getDChartSourceSpec(intKey)
 
-  // Try ultra-fast direct browser VNDIRECT DChart for native intervals (~130ms vs ~1.8s via Vercel)
-  if (nativeSpec) {
-    try {
-      const nowSec = Math.floor(Date.now() / 1000)
-      const toSec = normalizeEpochSec(to) || nowSec
-      const fromSec = normalizeEpochSec(from) || (toSec - nativeSpec.lookbackDays * 86400)
-      const url = `https://dchart-api.vndirect.com.vn/dchart/history?resolution=${nativeSpec.res}&symbol=${encodeURIComponent(ticker)}&from=${fromSec}&to=${toSec}`
-      const resp = await fetch(url, { signal: createTimeoutSignal(4000) })
-      if (resp.ok) {
-        const json = await resp.json()
-        const bars = parseDChartBars(json, ticker)
-        if (bars.length > 0) return bars
+  // Ultra-fast client-direct VNDIRECT DChart + JS resampling for ALL timeframes (~130-450ms)
+  try {
+    const nowSec = Math.floor(Date.now() / 1000)
+    const toSec = normalizeEpochSec(to) || nowSec
+    const fromSec = normalizeEpochSec(from) || (toSec - spec.lookbackDays * 86400)
+    const url = `https://dchart-api.vndirect.com.vn/dchart/history?resolution=${spec.res}&symbol=${encodeURIComponent(ticker)}&from=${fromSec}&to=${toSec}`
+    const resp = await fetch(url, { signal: createTimeoutSignal(6000) })
+    if (resp.ok) {
+      const json = await resp.json()
+      const rawBars = parseDChartBars(json, ticker)
+      if (rawBars.length > 0) {
+        const resampled = resampleBars(rawBars, spec.targetUnit, spec.targetMult)
+        if (resampled.length > 0) return resampled
       }
-    } catch {
-      // Fall back transparently to FastAPI /api/history
     }
+  } catch {
+    // Fall back transparently to FastAPI /api/history
   }
 
   const params = { symbol: ticker, interval: intKey }
@@ -109,9 +219,10 @@ export async function fetchHistory({ symbol, interval = '1D', from, to }) {
 export async function fetchLatest({ symbol, interval = '1D' }) {
   const ticker = String(symbol || 'VNINDEX').trim().toUpperCase()
   const intKey = String(interval || '1D').trim()
+  const spec = getDChartSourceSpec(intKey)
 
-  // Fast client-direct path for 1D (reuses ultra-fast VPS/DChart quote fetcher)
-  if (['1D', 'D'].includes(intKey.toUpperCase())) {
+  // Fast client-direct path for Daily / Weekly / Monthly quotes (reuses ultra-fast VPS/DChart)
+  if (spec.targetUnit === 'D' || spec.targetUnit === 'W' || spec.targetUnit === 'M') {
     try {
       const qMap = await fetchQuotes([ticker])
       const q = qMap?.[ticker]
@@ -130,17 +241,17 @@ export async function fetchLatest({ symbol, interval = '1D' }) {
         }
       }
     } catch {}
-  } else if (NATIVE_DCHART_MAP[intKey]) {
-    // Fast client-direct path for 1H / 15m / 1m intraday latest bar
+  } else {
+    // Fast client-direct path for any intraday timeframe (1m..45m, 1h..12h)
     try {
       const nowSec = Math.floor(Date.now() / 1000)
-      const fromSec = nowSec - 2 * 86400
-      const res = NATIVE_DCHART_MAP[intKey].res
-      const url = `https://dchart-api.vndirect.com.vn/dchart/history?resolution=${res}&symbol=${encodeURIComponent(ticker)}&from=${fromSec}&to=${nowSec}`
-      const resp = await fetch(url, { signal: createTimeoutSignal(3000) })
+      const fromSec = nowSec - (spec.targetUnit === 'h' ? 5 : 2) * 86400
+      const url = `https://dchart-api.vndirect.com.vn/dchart/history?resolution=${spec.res}&symbol=${encodeURIComponent(ticker)}&from=${fromSec}&to=${nowSec}`
+      const resp = await fetch(url, { signal: createTimeoutSignal(3500) })
       if (resp.ok) {
         const json = await resp.json()
-        const bars = parseDChartBars(json, ticker)
+        const rawBars = parseDChartBars(json, ticker)
+        const bars = resampleBars(rawBars, spec.targetUnit, spec.targetMult)
         if (bars.length > 0) {
           const lastBar = bars[bars.length - 1]
           const refPrice = bars.length >= 2 ? bars[bars.length - 2].close : lastBar.open

@@ -88,6 +88,7 @@ const applyLiveBarToChart = (chart, bar, period) => {
     }
 
     const timespan = period?.timespan || 'day'
+    const multiplier = Math.max(1, Number(period?.multiplier) || 1)
     let nextBar = bar
 
     if (timespan === 'day' || timespan === 'week' || timespan === 'month') {
@@ -98,14 +99,17 @@ const applyLiveBarToChart = (chart, bar, period) => {
       const lKey = `${lDate.getUTCFullYear()}-${lDate.getUTCMonth()}-${lDate.getUTCDate()}`
 
       const isWeekend = bDate.getUTCDay() === 0 || bDate.getUTCDay() === 6
-      const sameMonth =
-        bDate.getUTCFullYear() === lDate.getUTCFullYear() &&
-        bDate.getUTCMonth() === lDate.getUTCMonth()
+      const monthDiff =
+        (bDate.getUTCFullYear() - lDate.getUTCFullYear()) * 12 +
+        (bDate.getUTCMonth() - lDate.getUTCMonth())
+      const sameMonthBucket = monthDiff >= 0 && monthDiff < multiplier
+      const dayDiff = Math.floor((Number(bar.timestamp) - Number(lastBar.timestamp)) / 86400000)
+      const sameWeekBucket = dayDiff >= 0 && dayDiff < multiplier * 7 && bDate.getUTCDay() >= lDate.getUTCDay()
 
       if (
         bKey === lKey ||
-        timespan === 'week' ||
-        (timespan === 'month' && sameMonth) ||
+        (timespan === 'week' && (multiplier === 1 || sameWeekBucket)) ||
+        (timespan === 'month' && sameMonthBucket) ||
         isWeekend ||
         Number(bar.timestamp) <= Number(lastBar.timestamp)
       ) {
@@ -116,6 +120,36 @@ const applyLiveBarToChart = (chart, bar, period) => {
           high: Math.max(Number(lastBar.high || bar.close), Number(bar.high || bar.close)),
           low: Math.min(Number(lastBar.low || bar.close), Number(bar.low || bar.close)),
         }
+      }
+    } else if (timespan === 'minute' || timespan === 'hour') {
+      const ts = Number(bar.timestamp)
+      const lastTs = Number(lastBar.timestamp)
+      const stepMs = (timespan === 'hour' ? multiplier * 60 : multiplier) * 60000
+      const vnDate = new Date(ts + 7 * 3600 * 1000)
+      const dayStartMs = Date.UTC(vnDate.getUTCFullYear(), vnDate.getUTCMonth(), vnDate.getUTCDate()) - 7 * 3600 * 1000
+      const sessionAnchor = dayStartMs + 9 * 3600 * 1000
+      const bucketTs = ts >= sessionAnchor
+        ? sessionAnchor + Math.floor((ts - sessionAnchor) / stepMs) * stepMs
+        : Math.floor(ts / stepMs) * stepMs
+
+      if (bucketTs <= lastTs) {
+        nextBar = {
+          ...bar,
+          timestamp: lastBar.timestamp,
+          open: lastBar.open ?? bar.open,
+          high: Math.max(Number(lastBar.high || bar.close), Number(bar.high || bar.close)),
+          low: Math.min(Number(lastBar.low || bar.close), Number(bar.low || bar.close)),
+        }
+      } else {
+        nextBar = {
+          ...bar,
+          timestamp: bucketTs,
+        }
+      }
+    } else if (Number(bar.timestamp) < Number(lastBar.timestamp)) {
+      nextBar = {
+        ...bar,
+        timestamp: lastBar.timestamp,
       }
     }
 
@@ -945,8 +979,9 @@ export default function App() {
         }
         if (type === 2) {
           // Bottom timeline milestones (X-Axis)
+          const pSpan = activePeriodRef.current?.timespan
           const pText = activePeriodRef.current?.text?.toLowerCase() || '1d'
-          const isIntraday = ['1m', '3m', '5m', '15m', '30m', '45m', '1h', '2h', '3h', '4h'].includes(pText)
+          const isIntraday = ['minute', 'hour'].includes(pSpan) || pText.endsWith('m') && !activePeriodRef.current?.text?.endsWith('M') || pText.endsWith('h')
           return isIntraday ? `${day}/${month} ${hours}:${minutes}` : `${day}/${month}/${year}`
         }
         return `${day}/${month}/${year} ${hours}:${minutes}`
@@ -1186,7 +1221,16 @@ export default function App() {
       if (requestId !== switchRequestIdRef.current) return
 
       if (bars && bars.length > 0) {
-        if (!cachedBars || cachedBars.length !== bars.length) {
+        const cachedLast = cachedBars?.[cachedBars.length - 1]
+        const freshLast = bars[bars.length - 1]
+        const needsRefresh =
+          !cachedBars ||
+          cachedBars.length !== bars.length ||
+          !cachedLast ||
+          cachedLast.timestamp !== freshLast.timestamp ||
+          cachedLast.close !== freshLast.close ||
+          cachedLast.volume !== freshLast.volume
+        if (needsRefresh) {
           chartInstanceRef.current.applyNewData(bars, false, () => {
             if (requestId !== switchRequestIdRef.current) return
             resetChartScale(chartInstanceRef.current, true)
@@ -1234,6 +1278,7 @@ export default function App() {
 
   // Switch Period (Chuyển khung thời gian mượt mà, không khựng)
   const handlePeriodChange = useCallback(async (period) => {
+    const prevPeriod = activePeriodRef.current
     setActivePeriod(period)
     activePeriodRef.current = period
     localStorage.setItem(STORAGE_KEYS.LAST_PERIOD, JSON.stringify(period))
@@ -1242,7 +1287,7 @@ export default function App() {
     const requestId = ++switchRequestIdRef.current
 
     saveDrawingsForSymbol(activeSymbolRef.current)
-    datafeedRef.current.unsubscribe(activeSymbolRef.current, activePeriodRef.current)
+    datafeedRef.current.unsubscribe(activeSymbolRef.current, prevPeriod)
 
     try {
       chartInstanceRef.current.removeOverlay()
@@ -1283,7 +1328,16 @@ export default function App() {
       if (requestId !== switchRequestIdRef.current) return
 
       if (bars && bars.length > 0) {
-        if (!cachedBars || cachedBars.length !== bars.length) {
+        const cachedLast = cachedBars?.[cachedBars.length - 1]
+        const freshLast = bars[bars.length - 1]
+        const needsRefresh =
+          !cachedBars ||
+          cachedBars.length !== bars.length ||
+          !cachedLast ||
+          cachedLast.timestamp !== freshLast.timestamp ||
+          cachedLast.close !== freshLast.close ||
+          cachedLast.volume !== freshLast.volume
+        if (needsRefresh) {
           chartInstanceRef.current.applyNewData(bars, false, () => {
             if (requestId !== switchRequestIdRef.current) return
             resetChartScale(chartInstanceRef.current, true)

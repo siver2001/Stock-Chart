@@ -126,11 +126,16 @@ def get_latest(
     """
     try:
         from datetime import datetime, timedelta
+        import re
         sym_str = (symbol if isinstance(symbol, str) else getattr(symbol, "default", "VNINDEX")).strip().upper()
         int_str = (interval if isinstance(interval, str) else getattr(interval, "default", "1D")).strip()
 
-        # If daily resolution, use the ultra-fast synchronized quote fetcher
-        if int_str.upper() in ("1D", "D", "2D", "3D"):
+        # If daily/weekly/monthly resolution, use the ultra-fast synchronized quote fetcher
+        is_dwm = (
+            int_str.upper() in ("1D", "D", "2D", "3D", "5D", "1W", "W", "2W")
+            or bool(re.fullmatch(r"\d*M", int_str))
+        )
+        if is_dwm:
             q_map = fetch_live_quotes([sym_str])
             if sym_str in q_map:
                 q = q_map[sym_str]
@@ -146,8 +151,9 @@ def get_latest(
                     "pct_change": q["pct_change"],
                 }
 
-        # For intraday (1m, 5m, 1h...), fetch only recent 2 days to stay lightning fast
-        start_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+        # For intraday (1m..45m, 1h..12h), fetch a short recent window to stay lightning fast
+        lookback_days = 5 if int_str.lower().endswith("h") else 2
+        start_date = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
         df, _ = fetch_ohlcv(symbol=sym_str, interval=int_str, start_date=start_date)
         if df.empty:
             df, _ = fetch_ohlcv(symbol=sym_str, interval=int_str)

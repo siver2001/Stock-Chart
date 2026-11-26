@@ -150,8 +150,17 @@ export class VNStockDatafeed {
         }
 
         if (!bars || bars.length === 0) {
-          const startDate = from ? new Date(from).toISOString().slice(0, 10) : '2023-01-01'
-          const endDate = to ? new Date(to).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+          const defaultLookbackDays = interval.endsWith('m')
+            ? 14
+            : interval.endsWith('H') || interval.endsWith('h')
+            ? 120
+            : interval.endsWith('W') || interval.endsWith('M')
+            ? 1825
+            : 730
+          const endMs = to || Date.now()
+          const startMs = from || endMs - defaultLookbackDays * 86400000
+          const startDate = new Date(startMs).toISOString().slice(0, 10)
+          const endDate = new Date(endMs).toISOString().slice(0, 10)
 
           const res = await fetchKLines({
             symbol: ticker,
