@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { init, dispose } from 'klinecharts'
 import { registerAllCustomIndicators } from './indicators'
 import { VNStockDatafeed } from './datafeed/vnDatafeed'
+import { getBucketTimestamp } from './api/stockApi'
 
 import TradingViewHeader from './components/TradingViewHeader'
 import DrawingToolbar, { ALL_DRAWING_TOOLS_MAP } from './components/DrawingToolbar'
@@ -89,30 +90,19 @@ const applyLiveBarToChart = (chart, bar, period) => {
 
     const timespan = period?.timespan || 'day'
     const multiplier = Math.max(1, Number(period?.multiplier) || 1)
-    let nextBar = bar
+    const unitMap = { minute: 'm', hour: 'h', day: 'D', week: 'W', month: 'M' }
+    const bucketUnit = unitMap[timespan] || 'D'
+    const ts = Number(bar.timestamp)
+    const lastTs = Number(lastBar.timestamp)
+    const bucketTs = getBucketTimestamp(ts, bucketUnit, multiplier)
+
+    let nextBar = { ...bar, timestamp: bucketTs }
 
     if (timespan === 'day' || timespan === 'week' || timespan === 'month') {
-      const toVnDate = (ts) => new Date(Number(ts) + 7 * 3600 * 1000)
-      const bDate = toVnDate(bar.timestamp)
-      const lDate = toVnDate(lastBar.timestamp)
-      const bKey = `${bDate.getUTCFullYear()}-${bDate.getUTCMonth()}-${bDate.getUTCDate()}`
-      const lKey = `${lDate.getUTCFullYear()}-${lDate.getUTCMonth()}-${lDate.getUTCDate()}`
-
+      const toVnDate = (val) => new Date(Number(val) + 7 * 3600 * 1000)
+      const bDate = toVnDate(ts)
       const isWeekend = bDate.getUTCDay() === 0 || bDate.getUTCDay() === 6
-      const monthDiff =
-        (bDate.getUTCFullYear() - lDate.getUTCFullYear()) * 12 +
-        (bDate.getUTCMonth() - lDate.getUTCMonth())
-      const sameMonthBucket = monthDiff >= 0 && monthDiff < multiplier
-      const dayDiff = Math.floor((Number(bar.timestamp) - Number(lastBar.timestamp)) / 86400000)
-      const sameWeekBucket = dayDiff >= 0 && dayDiff < multiplier * 7 && bDate.getUTCDay() >= lDate.getUTCDay()
-
-      if (
-        bKey === lKey ||
-        (timespan === 'week' && (multiplier === 1 || sameWeekBucket)) ||
-        (timespan === 'month' && sameMonthBucket) ||
-        isWeekend ||
-        Number(bar.timestamp) <= Number(lastBar.timestamp)
-      ) {
+      if (bucketTs <= lastTs || isWeekend) {
         nextBar = {
           ...bar,
           timestamp: lastBar.timestamp,
@@ -121,35 +111,13 @@ const applyLiveBarToChart = (chart, bar, period) => {
           low: Math.min(Number(lastBar.low || bar.close), Number(bar.low || bar.close)),
         }
       }
-    } else if (timespan === 'minute' || timespan === 'hour') {
-      const ts = Number(bar.timestamp)
-      const lastTs = Number(lastBar.timestamp)
-      const stepMs = (timespan === 'hour' ? multiplier * 60 : multiplier) * 60000
-      const vnDate = new Date(ts + 7 * 3600 * 1000)
-      const dayStartMs = Date.UTC(vnDate.getUTCFullYear(), vnDate.getUTCMonth(), vnDate.getUTCDate()) - 7 * 3600 * 1000
-      const sessionAnchor = dayStartMs + 9 * 3600 * 1000
-      const bucketTs = ts >= sessionAnchor
-        ? sessionAnchor + Math.floor((ts - sessionAnchor) / stepMs) * stepMs
-        : Math.floor(ts / stepMs) * stepMs
-
-      if (bucketTs <= lastTs) {
-        nextBar = {
-          ...bar,
-          timestamp: lastBar.timestamp,
-          open: lastBar.open ?? bar.open,
-          high: Math.max(Number(lastBar.high || bar.close), Number(bar.high || bar.close)),
-          low: Math.min(Number(lastBar.low || bar.close), Number(bar.low || bar.close)),
-        }
-      } else {
-        nextBar = {
-          ...bar,
-          timestamp: bucketTs,
-        }
-      }
-    } else if (Number(bar.timestamp) < Number(lastBar.timestamp)) {
+    } else if (bucketTs <= lastTs) {
       nextBar = {
         ...bar,
         timestamp: lastBar.timestamp,
+        open: lastBar.open ?? bar.open,
+        high: Math.max(Number(lastBar.high || bar.close), Number(bar.high || bar.close)),
+        low: Math.min(Number(lastBar.low || bar.close), Number(bar.low || bar.close)),
       }
     }
 

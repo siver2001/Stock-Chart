@@ -58,19 +58,24 @@ function getDChartSourceSpec(interval) {
   return { res: 'D', lookbackDays: mult > 1 ? 1460 : 730, targetUnit: 'D', targetMult: mult }
 }
 
-function getBucketTimestamp(tsMs, unit, mult) {
+export function getBucketTimestamp(tsMs, unit, mult) {
   const VN_OFFSET_MS = 7 * 3600 * 1000
   if (unit === 'm') {
     const stepMs = mult * 60 * 1000
+    const vn = new Date(tsMs + VN_OFFSET_MS)
+    const dayStartMs = Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate()) - VN_OFFSET_MS
+    const sessionAnchor = dayStartMs + 9 * 3600 * 1000 // 09:00 GMT+7 VN market open
+    if (tsMs >= sessionAnchor) {
+      return sessionAnchor + Math.floor((tsMs - sessionAnchor) / stepMs) * stepMs
+    }
     return Math.floor(tsMs / stepMs) * stepMs
   }
   if (unit === 'h') {
-    // Session-aware VN trading hour buckets so 2h/3h/4h/6h aggregate intraday bars cleanly
+    // Session-aware VN trading hour buckets anchored at 09:00 VN market open
     const vn = new Date(tsMs + VN_OFFSET_MS)
     const dayStartMs = Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate()) - VN_OFFSET_MS
     const vnHour = vn.getUTCHours()
-    // Anchor at 09:00 VN trading open (or 00:00 if multi-hour >= 6h)
-    const anchorHour = mult >= 6 ? 0 : 9
+    const anchorHour = 9
     const relHours = Math.max(0, vnHour - anchorHour)
     const bucketIndex = Math.floor(relHours / mult)
     return dayStartMs + (anchorHour + bucketIndex * mult) * 3600 * 1000
@@ -86,11 +91,13 @@ function getBucketTimestamp(tsMs, unit, mult) {
   }
   if (unit === 'W') {
     // Monday start of ISO week (UTC midnight matching DChart daily convention)
+    // Unix epoch day 0 (1970-01-01) was Thursday, so Monday 1970-01-05 is +4 days
     const dayOfWeek = (vn.getUTCDay() + 6) % 7 // Monday = 0 .. Sunday = 6
     const mondayMs = Date.UTC(y, m, d - dayOfWeek)
     if (mult === 1) return mondayMs
-    const weekNum = Math.floor(mondayMs / (7 * 86400000))
-    return Math.floor(weekNum / mult) * mult * 7 * 86400000
+    const MONDAY_EPOCH_MS = 4 * 86400000
+    const weekNum = Math.floor((mondayMs - MONDAY_EPOCH_MS) / (7 * 86400000))
+    return MONDAY_EPOCH_MS + Math.floor(weekNum / mult) * mult * 7 * 86400000
   }
   if (unit === 'M') {
     const monthIndex = y * 12 + m
@@ -185,28 +192,44 @@ function parseDChartBars(data, ticker) {
   return deduped
 }
 
+let _dchartBlockedUntil = 0
+
+function isDChartSkippedInBrowser() {
+  return typeof window !== 'undefined' && Date.now() < _dchartBlockedUntil
+}
+
+function noteDChartStatus(status) {
+  if (typeof window !== 'undefined' && (status === 403 || status === 401)) {
+    _dchartBlockedUntil = Date.now() + 60_000
+  }
+}
+
 export async function fetchHistory({ symbol, interval = '1D', from, to }) {
   const ticker = String(symbol || 'VNINDEX').trim().toUpperCase()
   const intKey = String(interval || '1D').trim()
   const spec = getDChartSourceSpec(intKey)
 
   // Ultra-fast client-direct VNDIRECT DChart + JS resampling for ALL timeframes (~130-450ms)
-  try {
-    const nowSec = Math.floor(Date.now() / 1000)
-    const toSec = normalizeEpochSec(to) || nowSec
-    const fromSec = normalizeEpochSec(from) || (toSec - spec.lookbackDays * 86400)
-    const url = `https://dchart-api.vndirect.com.vn/dchart/history?resolution=${spec.res}&symbol=${encodeURIComponent(ticker)}&from=${fromSec}&to=${toSec}`
-    const resp = await fetch(url, { signal: createTimeoutSignal(6000) })
-    if (resp.ok) {
-      const json = await resp.json()
-      const rawBars = parseDChartBars(json, ticker)
-      if (rawBars.length > 0) {
-        const resampled = resampleBars(rawBars, spec.targetUnit, spec.targetMult)
-        if (resampled.length > 0) return resampled
+  if (!isDChartSkippedInBrowser()) {
+    try {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const toSec = normalizeEpochSec(to) || nowSec
+      const fromSec = normalizeEpochSec(from) || (toSec - spec.lookbackDays * 86400)
+      const url = `https://dchart-api.vndirect.com.vn/dchart/history?resolution=${spec.res}&symbol=${encodeURIComponent(ticker)}&from=${fromSec}&to=${toSec}`
+      const resp = await fetch(url, { signal: createTimeoutSignal(6000) })
+      if (resp.ok) {
+        const json = await resp.json()
+        const rawBars = parseDChartBars(json, ticker)
+        if (rawBars.length > 0) {
+          const resampled = resampleBars(rawBars, spec.targetUnit, spec.targetMult)
+          if (resampled.length > 0) return resampled
+        }
+      } else {
+        noteDChartStatus(resp.status)
       }
+    } catch {
+      // Fall back transparently to FastAPI /api/history
     }
-  } catch {
-    // Fall back transparently to FastAPI /api/history
   }
 
   const params = { symbol: ticker, interval: intKey }
@@ -241,7 +264,7 @@ export async function fetchLatest({ symbol, interval = '1D' }) {
         }
       }
     } catch {}
-  } else {
+  } else if (!isDChartSkippedInBrowser()) {
     // Fast client-direct path for any intraday timeframe (1m..45m, 1h..12h)
     try {
       const nowSec = Math.floor(Date.now() / 1000)
@@ -260,6 +283,8 @@ export async function fetchLatest({ symbol, interval = '1D' }) {
           const pct = refPrice !== 0 ? Number(((diff / refPrice) * 100).toFixed(2)) : 0
           return { ...lastBar, ref_price: refPrice, change: diff, pct_change: pct }
         }
+      } else {
+        noteDChartStatus(resp.status)
       }
     } catch {}
   }
@@ -290,11 +315,15 @@ function createTimeoutSignal(ms) {
 }
 
 async function fetchDirectDChartQuote(sym) {
+  if (isDChartSkippedInBrowser()) return null
   const nowSec = Math.floor(Date.now() / 1000)
   const fromSec = nowSec - 7 * 86400
   const url = `https://dchart-api.vndirect.com.vn/dchart/history?resolution=D&symbol=${encodeURIComponent(sym)}&from=${fromSec}&to=${nowSec}`
   const resp = await fetch(url, { signal: createTimeoutSignal(3000) })
-  if (!resp.ok) return null
+  if (!resp.ok) {
+    noteDChartStatus(resp.status)
+    return null
+  }
   const data = await resp.json()
   if (!data || data.s !== 'ok' || !Array.isArray(data.t) || data.t.length === 0) return null
 

@@ -421,16 +421,73 @@ def generate_demo_ohlcv(
 
 
 def _resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame:
-    dt = pd.to_datetime(df["timestamp"], unit="ms")
-    temp = df.set_index(dt)
-    agg = temp.resample(rule).agg({
-        "open": "first",
-        "high": "max",
-        "low": "min",
-        "close": "last",
-        "volume": "sum",
-    }).dropna()
-    agg["timestamp"] = agg.index.astype("int64") // 10**6
+    if df.empty:
+        return df
+
+    import re
+    from datetime import datetime, timedelta, timezone
+
+    s = str(rule or "1D").strip()
+    m = re.match(r"^(\d*)([a-zA-Z]+)$", s)
+    mult = int(m.group(1)) if (m and m.group(1)) else 1
+    unit_raw = m.group(2) if m else "D"
+
+    if unit_raw.lower().startswith("min") or unit_raw == "m":
+        unit = "m"
+    elif unit_raw.lower().startswith("h"):
+        unit = "h"
+    elif unit_raw.lower().startswith("w"):
+        unit = "W"
+    elif unit_raw.upper().startswith("ME") or unit_raw == "M":
+        unit = "M"
+    else:
+        unit = "D"
+
+    if (unit == "D" and mult == 1) or (unit == "h" and mult == 1) or (unit == "m" and mult == 1):
+        return df.sort_values("timestamp").reset_index(drop=True)
+
+    VN_OFFSET_MS = 7 * 3600 * 1000
+    MONDAY_EPOCH_MS = 4 * 86400 * 1000
+    step_ms = mult * 60 * 1000
+
+    def _bucket_ts(ts_val: Any) -> int:
+        ts_ms = int(ts_val)
+        vn_dt = datetime.fromtimestamp((ts_ms + VN_OFFSET_MS) / 1000.0, tz=timezone.utc)
+        if unit == "m":
+            day_start_ms = int(datetime(vn_dt.year, vn_dt.month, vn_dt.day, tzinfo=timezone.utc).timestamp() * 1000) - VN_OFFSET_MS
+            session_anchor = day_start_ms + 9 * 3600 * 1000
+            if ts_ms >= session_anchor:
+                return session_anchor + ((ts_ms - session_anchor) // step_ms) * step_ms
+            return (ts_ms // step_ms) * step_ms
+        if unit == "h":
+            day_start_ms = int(datetime(vn_dt.year, vn_dt.month, vn_dt.day, tzinfo=timezone.utc).timestamp() * 1000) - VN_OFFSET_MS
+            rel_hours = max(0, vn_dt.hour - 9)
+            bucket_idx = rel_hours // mult
+            return day_start_ms + (9 + bucket_idx * mult) * 3600 * 1000
+        if unit == "W":
+            monday_dt = datetime(vn_dt.year, vn_dt.month, vn_dt.day, tzinfo=timezone.utc) - timedelta(days=vn_dt.weekday())
+            monday_ms = int(monday_dt.timestamp() * 1000)
+            if mult == 1:
+                return monday_ms
+            week_num = (monday_ms - MONDAY_EPOCH_MS) // (7 * 86400 * 1000)
+            return MONDAY_EPOCH_MS + (week_num // mult) * mult * 7 * 86400 * 1000
+        if unit == "M":
+            month_idx = vn_dt.year * 12 + (vn_dt.month - 1)
+            bucket_month = (month_idx // mult) * mult
+            by, bm = bucket_month // 12, (bucket_month % 12) + 1
+            return int(datetime(by, bm, 1, tzinfo=timezone.utc).timestamp() * 1000)
+        # Multi-day ("2D", "3D", "5D"...)
+        day_num = int(datetime(vn_dt.year, vn_dt.month, vn_dt.day, tzinfo=timezone.utc).timestamp()) // 86400
+        return (day_num // mult) * mult * 86400 * 1000
+
+    ordered = df.sort_values("timestamp").copy()
+    ordered["_bucket_ts"] = ordered["timestamp"].map(_bucket_ts)
+    agg = (
+        ordered.groupby("_bucket_ts", sort=True)
+        .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+        .reset_index()
+        .rename(columns={"_bucket_ts": "timestamp"})
+    )
     return agg[["timestamp", "open", "high", "low", "close", "volume"]].reset_index(drop=True)
 
 
