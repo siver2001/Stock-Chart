@@ -149,14 +149,15 @@ export class VNStockDatafeed {
           // Fallback to fetchKLines
         }
 
-        if (!bars || bars.length === 0) {
+        if ((!bars || bars.length === 0) && !from && !to) {
+          const minsVal = interval.endsWith('m') ? parseInt(interval, 10) || 1 : 0
           const defaultLookbackDays = interval.endsWith('m')
-            ? 14
+            ? (minsVal >= 15 && minsVal % 15 === 0 ? 365 : 60)
             : interval.endsWith('H') || interval.endsWith('h')
-            ? 120
+            ? 365
             : interval.endsWith('W') || interval.endsWith('M')
-            ? 1825
-            : 730
+            ? 3650
+            : 1825
           const endMs = to || Date.now()
           const startMs = from || endMs - defaultLookbackDays * 86400000
           const startDate = new Date(startMs).toISOString().slice(0, 10)

@@ -41,21 +41,21 @@ function getDChartSourceSpec(interval) {
   const { mult, unit } = parseIntervalSpec(interval)
   if (unit === 'm') {
     if (mult >= 15 && mult % 15 === 0) {
-      return { res: '15', lookbackDays: 60, targetUnit: 'm', targetMult: mult }
+      return { res: '15', lookbackDays: 365, targetUnit: 'm', targetMult: mult }
     }
-    return { res: '1', lookbackDays: 14, targetUnit: 'm', targetMult: mult }
+    return { res: '1', lookbackDays: mult === 1 ? 45 : 60, targetUnit: 'm', targetMult: mult }
   }
   if (unit === 'h') {
-    return { res: '60', lookbackDays: mult >= 6 ? 270 : 180, targetUnit: 'h', targetMult: mult }
+    return { res: '60', lookbackDays: mult >= 6 ? 730 : 365, targetUnit: 'h', targetMult: mult }
   }
   if (unit === 'W') {
-    return { res: 'D', lookbackDays: mult > 1 ? 2555 : 1825, targetUnit: 'W', targetMult: mult }
+    return { res: 'D', lookbackDays: 2555, targetUnit: 'W', targetMult: mult }
   }
   if (unit === 'M') {
     return { res: 'D', lookbackDays: mult >= 3 ? 5475 : 3650, targetUnit: 'M', targetMult: mult }
   }
   // Daily (1D, 2D, 3D, 5D...)
-  return { res: 'D', lookbackDays: mult > 1 ? 1460 : 730, targetUnit: 'D', targetMult: mult }
+  return { res: 'D', lookbackDays: mult > 1 ? 2555 : 1825, targetUnit: 'D', targetMult: mult }
 }
 
 export function getBucketTimestamp(tsMs, unit, mult) {

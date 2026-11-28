@@ -841,21 +841,30 @@ def fetch_ohlcv(
             from_ts = to_ts - 730 * 86400
     else:
         if norm_interval.endswith("M"):
-            from_ts = to_ts - 3650 * 86400  # 10 years for 1M / 3M / 6M / 12M
+            digits = "".join(c for c in norm_interval if c.isdigit())
+            m_mult = int(digits) if digits else 1
+            from_ts = to_ts - (5475 if m_mult >= 3 else 3650) * 86400  # 10-15 years for 1M..12M
         elif norm_interval.endswith("W"):
-            from_ts = to_ts - 1825 * 86400  # 5 years for 1W / 2W
+            from_ts = to_ts - 2555 * 86400  # 7 years for 1W / 2W
         elif norm_interval.endswith("D") or norm_interval == "D":
             digits = "".join(c for c in norm_interval if c.isdigit())
             d_mult = int(digits) if digits else 1
-            from_ts = to_ts - (1460 if d_mult > 1 else 730) * 86400
+            from_ts = to_ts - (2555 if d_mult > 1 else 1825) * 86400  # 5-7 years for 1D..5D
         elif norm_interval.lower().endswith("h"):
-            from_ts = to_ts - 180 * 86400   # 180 days for 1H..12H
+            digits = "".join(c for c in norm_interval if c.isdigit())
+            h_mult = int(digits) if digits else 1
+            from_ts = to_ts - (730 if h_mult >= 6 else 365) * 86400   # 1-2 years for 1H..12H
         elif norm_interval.endswith("m"):
             digits = "".join(c for c in norm_interval if c.isdigit())
             mins = int(digits) if digits else 1
-            from_ts = to_ts - (60 if mins >= 15 and mins % 15 == 0 else 14) * 86400
+            if mins >= 15 and mins % 15 == 0:
+                from_ts = to_ts - 365 * 86400   # 1 full year for 15m/30m/45m
+            elif mins == 1:
+                from_ts = to_ts - 45 * 86400    # 45 days for 1m
+            else:
+                from_ts = to_ts - 60 * 86400    # 60 days for 3m/5m/10m
         else:
-            from_ts = to_ts - 730 * 86400
+            from_ts = to_ts - 1825 * 86400
 
     cache_key = f"{symbol}:{from_ts}:{to_ts}:{norm_interval}"
     now = time.time()
@@ -931,7 +940,11 @@ def fetch_ohlcv(
     except ImportError:
         pass
 
-    # 3. Fallback to realistic generator with real prices & current dates
+    # 3. Never generate synthetic candles when paging backward into historical windows
+    if end_date and to_ts < now_ts - 7 * 86400:
+        return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"]), "vndirect:empty"
+
+    # Fallback to realistic generator with real prices & current dates on live outage
     s_date = datetime.fromtimestamp(from_ts).strftime("%Y-%m-%d")
     e_date = datetime.fromtimestamp(to_ts).strftime("%Y-%m-%d")
     demo_df = generate_demo_ohlcv(symbol, s_date, e_date, norm_interval)

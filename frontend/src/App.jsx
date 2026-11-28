@@ -961,11 +961,48 @@ export default function App() {
     })
     datafeedRef.current = datafeed
 
+    // Load older historical bars cleanly when scrolling left past the earliest loaded candle
+    chart.setLoadDataCallback(async ({ type, data, callback }) => {
+      if (type !== 'forward' || !data?.timestamp || !datafeedRef.current) {
+        callback([], false)
+        return
+      }
+      try {
+        const period = activePeriodRef.current
+        const span = period?.timespan || 'day'
+        const mult = Math.max(1, Number(period?.multiplier) || 1)
+        const chunkDays =
+          span === 'minute'
+            ? (mult >= 15 && mult % 15 === 0 ? 180 : 30)
+            : span === 'hour'
+            ? 365
+            : span === 'month'
+            ? 1825
+            : 1095
+        const toSec = Math.floor(Number(data.timestamp) / 1000) - 1
+        const fromSec = Math.max(946684800, toSec - chunkDays * 86400) // >= year 2000
+        if (toSec <= fromSec) {
+          callback([], false)
+          return
+        }
+        const olderBars = await datafeedRef.current.getHistoryKLineData(
+          activeSymbolRef.current,
+          period,
+          fromSec,
+          toSec
+        )
+        const filtered = (olderBars || []).filter((b) => Number(b.timestamp) < Number(data.timestamp))
+        callback(filtered, filtered.length > 0)
+      } catch {
+        callback([], false)
+      }
+    })
+
     // Load initial data
     const loadData = async () => {
       const bars = await datafeed.getHistoryKLineData(activeSymbol, activePeriod)
       if (bars && bars.length > 0) {
-        chart.applyNewData(bars, false, () => {
+        chart.applyNewData(bars, true, () => {
           resetChartScale(chart, true)
           restoreDrawingsForSymbol(activeSymbol)
         })
@@ -1159,7 +1196,7 @@ export default function App() {
     // 5. Nạp tức thì từ RAM Cache nếu đã có (0ms instant transition, không bao giờ nháy trắng)
     const cachedBars = datafeedRef.current.getCachedData(ticker, activePeriodRef.current)
     if (cachedBars && cachedBars.length > 0) {
-      chartInstanceRef.current.applyNewData(cachedBars, false, () => {
+      chartInstanceRef.current.applyNewData(cachedBars, true, () => {
         if (requestId !== switchRequestIdRef.current) return
         resetChartScale(chartInstanceRef.current, true)
         restoreDrawingsForSymbol(ticker)
@@ -1199,7 +1236,7 @@ export default function App() {
           cachedLast.close !== freshLast.close ||
           cachedLast.volume !== freshLast.volume
         if (needsRefresh) {
-          chartInstanceRef.current.applyNewData(bars, false, () => {
+          chartInstanceRef.current.applyNewData(bars, true, () => {
             if (requestId !== switchRequestIdRef.current) return
             resetChartScale(chartInstanceRef.current, true)
             restoreDrawingsForSymbol(ticker)
@@ -1270,7 +1307,7 @@ export default function App() {
 
     const cachedBars = datafeedRef.current.getCachedData(activeSymbolRef.current, period)
     if (cachedBars && cachedBars.length > 0) {
-      chartInstanceRef.current.applyNewData(cachedBars, false, () => {
+      chartInstanceRef.current.applyNewData(cachedBars, true, () => {
         if (requestId !== switchRequestIdRef.current) return
         resetChartScale(chartInstanceRef.current, true)
         restoreDrawingsForSymbol(activeSymbolRef.current)
@@ -1306,7 +1343,7 @@ export default function App() {
           cachedLast.close !== freshLast.close ||
           cachedLast.volume !== freshLast.volume
         if (needsRefresh) {
-          chartInstanceRef.current.applyNewData(bars, false, () => {
+          chartInstanceRef.current.applyNewData(bars, true, () => {
             if (requestId !== switchRequestIdRef.current) return
             resetChartScale(chartInstanceRef.current, true)
             restoreDrawingsForSymbol(activeSymbolRef.current)
@@ -1349,9 +1386,10 @@ export default function App() {
     })
   }, [saveDrawingsForSymbol, restoreDrawingsForSymbol])
 
-  // Background pre-cache watchlist symbols for instant 0ms switching
+  // Background pre-cache watchlist symbols only on daily timeframe so switching intraday charts stays fast
   useEffect(() => {
     if (!datafeedRef.current) return
+    if (activePeriod?.timespan !== 'day' || Number(activePeriod?.multiplier || 1) !== 1) return
     let symbolsToPreload = ['VNINDEX', 'VN30', 'FPT', 'HPG', 'VCB', 'SSI', 'MWG', 'TCB']
     try {
       const saved = localStorage.getItem('vn_stock_watchlist') || localStorage.getItem('vn_watchlist_symbols')
@@ -1366,7 +1404,7 @@ export default function App() {
 
     const timer = setTimeout(() => {
       datafeedRef.current?.prefetchSymbols?.(symbolsToPreload, activePeriodRef.current)
-    }, 1800)
+    }, 3000)
 
     return () => clearTimeout(timer)
   }, [activePeriod])

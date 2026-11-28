@@ -126,29 +126,59 @@ export default function TradingViewHeader({
     )
   }
 
-  // Get period object from text
+  // Get period object from text (preserve case sensitivity for 'm' minute vs 'M' month)
   const findPeriodObj = (text) => {
-    const existing = ALL_PERIODS_FLAT.find((p) => p.text.toLowerCase() === text.toLowerCase())
-    if (existing) return existing
-    // Parse dynamic custom period e.g. "10m", "6h", "5D"
-    const lower = text.toLowerCase()
+    const raw = String(text || '').trim()
+    const exactMatch = ALL_PERIODS_FLAT.find((p) => p.text === raw)
+    if (exactMatch) return exactMatch
+    const lower = raw.toLowerCase()
     const digits = parseInt(lower.replace(/\D/g, ''), 10) || 1
-    if (lower.endsWith('m') && !text.endsWith('M')) {
-      return { multiplier: digits, timespan: 'minute', text }
+    if (raw.endsWith('M') || lower.endsWith('mo')) {
+      return (
+        ALL_PERIODS_FLAT.find((p) => p.timespan === 'month' && p.multiplier === digits) || {
+          multiplier: digits,
+          timespan: 'month',
+          text: `${digits}M`,
+        }
+      )
+    }
+    if (lower.endsWith('m')) {
+      return (
+        ALL_PERIODS_FLAT.find((p) => p.timespan === 'minute' && p.multiplier === digits) || {
+          multiplier: digits,
+          timespan: 'minute',
+          text: `${digits}m`,
+        }
+      )
     }
     if (lower.endsWith('h')) {
-      return { multiplier: digits, timespan: 'hour', text }
-    }
-    if (lower.endsWith('d')) {
-      return { multiplier: digits, timespan: 'day', text: `${digits}D` }
+      return (
+        ALL_PERIODS_FLAT.find((p) => p.timespan === 'hour' && p.multiplier === digits) || {
+          multiplier: digits,
+          timespan: 'hour',
+          text: `${digits}h`,
+        }
+      )
     }
     if (lower.endsWith('w')) {
-      return { multiplier: digits, timespan: 'week', text: `${digits}W` }
+      return (
+        ALL_PERIODS_FLAT.find((p) => p.timespan === 'week' && p.multiplier === digits) || {
+          multiplier: digits,
+          timespan: 'week',
+          text: `${digits}W`,
+        }
+      )
     }
-    if (text.endsWith('M')) {
-      return { multiplier: digits, timespan: 'month', text: `${digits}M` }
+    if (lower.endsWith('d')) {
+      return (
+        ALL_PERIODS_FLAT.find((p) => p.timespan === 'day' && p.multiplier === digits) || {
+          multiplier: digits,
+          timespan: 'day',
+          text: `${digits}D`,
+        }
+      )
     }
-    return { multiplier: 1, timespan: 'day', text }
+    return { multiplier: 1, timespan: 'day', text: raw }
   }
 
   const handleAddCustom = (e) => {
@@ -199,7 +229,8 @@ export default function TradingViewHeader({
     },
   ]
 
-  const isPeriodActive = (p) => p.text.toLowerCase() === activePeriod?.text.toLowerCase()
+  const isPeriodActive = (p) =>
+    p.timespan === activePeriod?.timespan && Number(p.multiplier) === Number(activePeriod?.multiplier)
 
   // Topbar favorite objects
   const topbarPeriods = favPeriodTexts.map(findPeriodObj)
